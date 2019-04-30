@@ -3,6 +3,7 @@ import {isPresent} from '../Preconditions';
 import {Optional} from '../util/ts/Optional';
 import {Tag} from './Tag';
 import {TypedTag} from './TypedTag';
+import {Dictionaries} from '../util/Dictionaries';
 
 export class Tags {
 
@@ -83,7 +84,21 @@ export class Tags {
 
     }
 
-    public static toIDs(tags: Tag[]) {
+    /**
+     * From a union of the two tag arrays.
+     */
+    public static union(a: Tag[], b: Tag[]): Tag[] {
+
+        const result: { [id: string]: Tag } = {};
+
+        Dictionaries.putAll(Tags.toMap(a), result);
+        Dictionaries.putAll(Tags.toMap(b), result);
+
+        return Object.values(result);
+
+    }
+
+    public static toIDs(tags: ReadonlyArray<Tag>) {
         return tags.map(current => current.id);
     }
 
@@ -91,6 +106,7 @@ export class Tags {
      * We support foo:bar values in tags so that we can have typed tags.
      * For example: type:book or deck:fun or something along those lines.
      *
+     * We also support / to denote hierarchy, like deck:main/sub
      */
     public static stripTypedLabel(label: string): Optional<string> {
 
@@ -100,8 +116,15 @@ export class Tags {
             return Optional.empty();
         }
 
-        return Optional.of(label.replace(/^#([^:/]+):([^:]+)$/g, '#$1$2'));
+        // Remove any single lonely slashes
+        const noslashes = label.replace(/([^\/])\/([^\/])/g, '$1$2');
 
+        // If there are any slashes left, we don't like it.
+        if (noslashes.match(/\//g)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(noslashes.replace(/^#([^:/]+):([^:]+)$/g, '#$1$2'));
     }
 
     public static parseTypedTag(value: string): Optional<TypedTag> {
@@ -113,8 +136,6 @@ export class Tags {
             name: split[0],
             value: split[1]
         });
-
     }
-
 }
 

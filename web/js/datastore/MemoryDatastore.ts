@@ -1,26 +1,27 @@
 /**
  * Datastore just in memory with no on disk persistence.
  */
-import {
-    Datastore, InitResult, FileRef, FileMeta, DocMetaSnapshotEvent,
-    SnapshotResult, DocMetaSnapshotEventListener, DocMetaSnapshotBatch,
-    AbstractDatastore, ErrorListener } from './Datastore';
-import {Preconditions, isPresent} from '../Preconditions';
+import {AbstractDatastore, Datastore, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileMeta, FileRef, SnapshotResult, DatastoreOverview, PrefsProvider} from './Datastore';
+import {isPresent, Preconditions} from '../Preconditions';
 import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
-import {FilePaths} from '../util/FilePaths';
-import {Directories} from './Directories';
 import {Logger} from '../logger/Logger';
-import {DeleteResult} from './Datastore';
-import {FileDeleted, FileHandle, Files} from '../util/Files';
+import {FileHandle, Files} from '../util/Files';
 import {Backend} from './Backend';
-import {DatastoreFile} from './DatastoreFile';
+import {DocFileMeta} from './DocFileMeta';
 import {Optional} from '../util/ts/Optional';
 import {DocInfo} from '../metadata/DocInfo';
 import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
 import {Datastores} from './Datastores';
-import {DocMetaSnapshotEventListeners} from './DocMetaSnapshotEventListeners';
 import {NULL_FUNCTION} from '../util/Functions';
 import {DiskInitResult} from './DiskDatastore';
+import {ISODateTimeString, ISODateTimeStrings} from '../metadata/ISODateTimeStrings';
+import {DictionaryPrefs} from '../util/prefs/Prefs';
+import {Providers} from '../util/Providers';
+import {WriteFileOpts} from './Datastore';
+import {DefaultWriteFileOpts} from './Datastore';
+import {DatastoreCapabilities} from './Datastore';
+import {NetworkLayer} from './Datastore';
+import {WriteOpts} from './Datastore';
 
 const log = Logger.create();
 
@@ -28,40 +29,25 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
 
     public readonly id = 'memory';
 
-    public readonly stashDir: string;
-
-    public readonly filesDir: string;
-
-    public readonly dataDir: string;
-
-    public readonly logsDir: string;
-
-    public readonly directories: Directories;
+    private readonly created: ISODateTimeString;
 
     protected readonly docMetas: {[fingerprint: string]: string} = {};
 
     protected readonly files: {[key: string]: FileData} = {};
 
+    private readonly prefs = new DictionaryPrefs();
+
     constructor() {
         super();
 
-        this.directories = new Directories();
-
-        // these dir values are used in the UI and other places so we need to
-        // actually have values for them.
-        this.dataDir = Directories.getDataDir().path;
-        this.stashDir = FilePaths.create(this.dataDir, "stash");
-        this.filesDir = FilePaths.create(this.dataDir, "files");
-
-        this.logsDir = FilePaths.create(this.dataDir, "logs");
-
         this.docMetas = {};
+        this.created = ISODateTimeStrings.create();
 
     }
 
     // noinspection TsLint
     public async init(errorListener: ErrorListener = NULL_FUNCTION): Promise<DiskInitResult> {
-        return await this.directories.init();
+        return {};
     }
 
     public async stop() {
@@ -99,9 +85,9 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
     public async writeFile(backend: Backend,
                            ref: FileRef,
                            data: FileHandle | Buffer | string,
-                           meta: FileMeta = {}): Promise<DatastoreFile> {
+                           opts: WriteFileOpts = new DefaultWriteFileOpts()): Promise<DocFileMeta> {
 
-        const key = this.toFileRefKey(backend, ref);
+        const key = MemoryDatastore.toFileRefKey(backend, ref);
 
         let buff: Buffer | undefined;
 
@@ -113,15 +99,17 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
             buff = await Files.readFileAsync(data.path);
         }
 
+        const meta = opts.meta || {};
+
         this.files[key] = {buffer: buff!, meta};
 
-        return {backend, ref, url: 'FIXME:none', meta};
+        return {backend, ref, url: 'NOT_IMPLEMENTED:none'};
 
     }
 
-    public async getFile(backend: Backend, ref: FileRef): Promise<Optional<DatastoreFile>> {
+    public async getFile(backend: Backend, ref: FileRef): Promise<Optional<DocFileMeta>> {
 
-        const key = this.toFileRefKey(backend, ref);
+        const key = MemoryDatastore.toFileRefKey(backend, ref);
 
         if (!key) {
             return Optional.empty();
@@ -129,17 +117,17 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
 
         const fileData = this.files[key];
 
-        return Optional.of({backend, ref, url: 'FIXME:none', meta: fileData.meta});
+        return Optional.of({backend, ref, url: 'NOT_IMPLEMENTED:none', meta: fileData.meta});
 
     }
 
     public async containsFile(backend: Backend, ref: FileRef): Promise<boolean> {
-        const key = this.toFileRefKey(backend, ref);
+        const key = MemoryDatastore.toFileRefKey(backend, ref);
         return isPresent(this.files[key]);
     }
 
     public async deleteFile(backend: Backend, ref: FileRef): Promise<void> {
-        const key = this.toFileRefKey(backend, ref);
+        const key = MemoryDatastore.toFileRefKey(backend, ref);
         delete this.files[key];
     }
 
@@ -160,7 +148,9 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
     public async write(fingerprint: string,
                        data: string,
                        docInfo: DocInfo,
-                       datastoreMutation: DatastoreMutation<boolean> = new DefaultDatastoreMutation()): Promise<void> {
+                       opts: WriteOpts = {}): Promise<void> {
+
+        const datastoreMutation = opts.datastoreMutation || new DefaultDatastoreMutation();
 
         Preconditions.assertTypeOf(data, "string", "data");
 
@@ -171,7 +161,7 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    public async getDocMetaFiles(): Promise<DocMetaRef[]> {
+    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
 
         return Object.keys(this.docMetas)
             .map(fingerprint => <DocMetaRef> {fingerprint});
@@ -188,8 +178,31 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
         // noop now
     }
 
-    private toFileRefKey(backend: Backend, fileRef: FileRef) {
+    public async overview(): Promise<DatastoreOverview> {
+
+        const docMetaRefs = await this.getDocMetaRefs();
+
+        return {nrDocs: docMetaRefs.length, created: this.created};
+
+    }
+
+    public capabilities(): DatastoreCapabilities {
+
+        const networkLayers = new Set<NetworkLayer>(['local']);
+
+        return {
+            networkLayers,
+            permission: {mode: 'rw'}
+        };
+
+    }
+
+    private static toFileRefKey(backend: Backend, fileRef: FileRef) {
         return `${backend}:${fileRef.name}`;
+    }
+
+    public getPrefs(): PrefsProvider {
+        return Providers.toInterface(() => this.prefs);
     }
 
 }

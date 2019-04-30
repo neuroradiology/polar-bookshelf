@@ -58,9 +58,39 @@ describe('type tags', function() {
         assert.equal(Tags.stripTypedLabel("#:bar").get(), "#:bar");
         assert.equal(Tags.stripTypedLabel("#bar:").get(), "#bar:");
 
-        assert.ok(! Tags.stripTypedLabel("#bar:cat:dog").isPresent());
+        assert.equal(Tags.stripTypedLabel("#foo/bar").get(), "#foobar");
+        assert.equal(Tags.stripTypedLabel("#foo/bar/blah").get(), "#foobarblah");
 
+        assert.equal(Tags.stripTypedLabel("#base:foo/bar").get(), "#basefoobar");
+        assert.equal(Tags.stripTypedLabel("#base:foo/bar/blah").get(), "#basefoobarblah");
+    });
+
+    it("don't allow multiple colons", function() {
+        assert.ok(! Tags.stripTypedLabel("#bar:cat:dog").isPresent());
+        });
+
+    it("don't allow multi slashes", function() {
+        assert.ok(! Tags.stripTypedLabel("#bar//dog").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#//dog").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#dog//").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#//").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#bar///dog").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#///dog").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#dog///").isPresent());
+        assert.ok(! Tags.stripTypedLabel("#///").isPresent());
     });
 
 });
 
+
+describe('folder tags', function() {
+
+    it("basic functionality", function() {
+        Tags.assertValid('foo/bar');
+        Tags.assertValid('/foo/bar');
+
+        Tags.assertValid('cat/dog/boy/girl');
+    });
+
+
+});

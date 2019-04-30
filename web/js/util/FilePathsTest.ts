@@ -1,11 +1,40 @@
 import {assert} from 'chai';
-import {FilePaths} from './FilePaths';
+import {BrowserFilePaths, FilePaths} from './FilePaths';
 import {Files} from './Files';
-import {URLs} from './URLs';
 import fetch from './Fetch';
 import {isPresent} from '../Preconditions';
 
 describe('FilePaths', function() {
+
+    describe('BrowserFilePaths', function() {
+
+        it("basename", function() {
+
+            const assertEqual = (path: string, ext?: string) => {
+                const actual = FilePaths.basename(path, ext);
+                const expected = BrowserFilePaths.basename(path, ext);
+                assert.equal(actual, expected);
+            };
+
+            assertEqual('/foo/cat.txt', '.txt');
+
+            assertEqual('cat.txt', '.txt');
+
+            assertEqual('none');
+            assertEqual('/foo/bar.txt');
+            assertEqual('/foo/cat.txt');
+            assertEqual('/bar.txt');
+
+            BrowserFilePaths.SEP = '\\';
+
+            assert.equal(BrowserFilePaths.basename('c:\\foo\\cat.txt', '.txt'), 'cat');
+            assert.equal(BrowserFilePaths.basename('none'), 'none');
+
+            assert.equal(BrowserFilePaths.basename('c:\\foo\\bar.txt'), 'bar.txt');
+
+        });
+
+    });
 
     xdescribe('toWindowsPath', () => {
 
@@ -72,7 +101,7 @@ describe('FilePaths', function() {
             const data = 'hello world';
             await Files.writeFileAsync(path, data);
 
-            const url = FilePaths.toFileURL(path);
+            const url = FilePaths.toURL(path);
 
             console.log("URL: " + url);
 
@@ -82,6 +111,45 @@ describe('FilePaths', function() {
 
             assert.ok(isPresent(buffer), "no buffer");
             assert.equal(data, buffer.toString('utf8'));
+
+        });
+
+    });
+
+    describe('toURL', async function() {
+
+        it('spaces and special chars but still valid.', async function() {
+
+            const assertPathExists = async (path: string) => {
+                assert.ok(await Files.existsAsync(path), "Path does not exist: " + path);
+            };
+
+            const special = "This is a special name UPPER, (17) [test 10.11] -- foo (1)";
+
+            const dir = FilePaths.resolve(FilePaths.tmpdir(), special);
+            const path = FilePaths.resolve(dir, special + ".pdf");
+
+            await Files.removeDirectoryRecursivelyAsync(dir);
+
+            await Files.mkdirAsync(dir);
+            await Files.writeFileAsync(path, "fake data");
+
+            await assertPathExists(path);
+
+            const url = FilePaths.toURL(path);
+
+            console.log("Encoded URL is: " + url);
+
+            const decodedPath = FilePaths.fromURL(url);
+
+            console.log("Decoded path is: " + decodedPath);
+
+            // make sure the input path is the same as the decoded path.
+            assert.equal(path, decodedPath);
+
+            await assertPathExists(FilePaths.dirname(FilePaths.dirname(decodedPath)));
+            await assertPathExists(FilePaths.dirname(decodedPath));
+            await assertPathExists(decodedPath);
 
         });
 

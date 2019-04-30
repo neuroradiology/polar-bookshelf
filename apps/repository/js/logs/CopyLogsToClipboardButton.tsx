@@ -1,10 +1,9 @@
 import * as React from 'react';
 import {Logger} from '../../../../web/js/logger/Logger';
-import ReleasingReactComponent from '../framework/ReleasingReactComponent';
 import {MemoryLogger} from '../../../../web/js/logger/MemoryLogger';
-import {Button} from 'reactstrap';
-import {clipboard} from 'electron';
 import {Toaster} from '../../../../web/js/ui/toaster/Toaster';
+import {Clipboards} from '../../../../web/js/util/system/clipboard/Clipboards';
+import Button from 'reactstrap/lib/Button';
 
 const log = Logger.create();
 
@@ -12,22 +11,11 @@ class Styles {
 
 }
 
-export default class CopyLogsToClipboardButton extends ReleasingReactComponent<IProps, IState> {
+export default class CopyLogsToClipboardButton extends React.Component<IProps, IState> {
 
     constructor(props: IProps, context: any) {
         super(props, context);
 
-
-    }
-
-
-    public componentWillMount(): void {
-
-        this.releaser.register(
-            MemoryLogger.addEventListener(() => {
-                this.setState({messages: MemoryLogger.toView()});
-            })
-        );
 
     }
 
@@ -56,7 +44,7 @@ export default class CopyLogsToClipboardButton extends ReleasingReactComponent<I
 
         }).join("\n");
 
-        clipboard.writeText(text);
+        Clipboards.getInstance().writeText(text);
 
         Toaster.success("Wrote log output to clipboard.");
 

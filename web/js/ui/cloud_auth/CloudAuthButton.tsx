@@ -1,19 +1,20 @@
 /* eslint react/no-multi-comp: 0, react/prop-types: 0 */
 import React from 'react';
-import {Button, Popover, PopoverBody, UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem} from 'reactstrap';
-import Popper from 'popper.js';
 import {CloudLoginModal} from './CloudLoginModal';
 import {Firebase} from '../../firebase/Firebase';
 import * as firebase from '../../firebase/lib/firebase';
-import {FirebaseUIAuth} from '../../firebase/FirebaseUIAuth';
 import {Logger} from '../../logger/Logger';
 import {PersistenceLayerManager} from '../../datastore/PersistenceLayerManager';
-import {CloudSyncOverviewModal} from './CloudSyncOverviewModal';
 import {CloudSyncConfiguredModal} from './CloudSyncConfiguredModal';
 import {RendererAnalytics} from '../../ga/RendererAnalytics';
 import {Nav} from '../util/Nav';
 import {InviteUsersModal} from './InviteUsersModal';
 import {Invitations} from '../../datastore/Invitations';
+import {URLs} from '../../util/URLs';
+import {EnableCloudSyncButton} from './EnableCloudSyncButton';
+import {AccountDropdown} from './AccountDropdown';
+import {AuthHandlers, UserInfo} from '../../apps/repository/auth_handler/AuthHandler';
+import {AccountControlDropdown} from './AccountControlDropdown';
 
 const log = Logger.create();
 
@@ -27,10 +28,12 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
         let stage: AuthStage | undefined;
 
         if (document.location!.hash === '#login') {
+            RendererAnalytics.event({category: 'cloud', action: 'login'});
             stage = 'login';
         }
 
         if (document.location!.hash === "#configured") {
+            RendererAnalytics.event({category: 'cloud', action: 'configured'});
             stage = 'configured';
         }
 
@@ -39,7 +42,7 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
             stage
         };
 
-        console.log("state: ", this.state);
+        log.info("auth state: ", this.state);
 
         Firebase.init();
 
@@ -51,27 +54,36 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
 
     public render() {
 
+        const AccountButton = () => {
+
+            if (this.state.userInfo) {
+
+                return <AccountControlDropdown userInfo={this.state.userInfo}
+                                               onInvite={() => this.changeAuthStage('invite')}
+                                               onLogout={() => this.logout()}/>;
+
+            } else {
+
+                return <AccountDropdown onInvite={() => this.changeAuthStage('invite')}
+                                        onLogout={() => this.logout()}/>;
+
+            }
+
+        };
+
         if (this.state.mode === 'needs-auth') {
             return (
                 <div>
 
-                    <Button color="primary"
-                            size="sm"
-                            onClick={() => this.enableCloudSync()}>
-
-                        <i className="fas fa-cloud-upload-alt" style={{marginRight: '5px'}}></i>
-
-                        Cloud Sync
-
-                    </Button>
+                    <EnableCloudSyncButton onClick={() => this.enableCloudSync()}/>
 
                     <CloudLoginModal isOpen={this.state.stage === 'login'}
                                      onCancel={() => this.changeAuthStage()}/>
 
 
-                    <CloudSyncOverviewModal isOpen={this.state.stage === 'overview'}
-                                            onCancel={() => this.changeAuthStage()}
-                                            onSignup={() => this.changeAuthStage('login')}/>
+                    {/*<CloudSyncOverviewModal isOpen={this.state.stage === 'overview'}*/}
+                                            {/*onCancel={() => this.changeAuthStage()}*/}
+                                            {/*onSignup={() => this.changeAuthStage('login')}/>*/}
 
                 </div>
 
@@ -89,20 +101,7 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
                                       onCancel={() => this.changeAuthStage()}
                                       onInvite={(emailAddresses) => this.onInvitedUsers(emailAddresses)}/>
 
-                    <UncontrolledDropdown direction="down"
-                                          size="sm">
-
-                        <DropdownToggle color="primary" caret>
-                            <i className="fas fa-cloud-upload-alt" style={{marginRight: '5px'}}></i>
-
-                            Cloud Sync
-                        </DropdownToggle>
-                        <DropdownMenu>
-                            <DropdownItem size="sm" onClick={() => this.changeAuthStage('invite')}>Invite Users</DropdownItem>
-                            <DropdownItem divider />
-                            <DropdownItem size="sm" onClick={() => this.logout()} className="text-danger">Logout</DropdownItem>
-                        </DropdownMenu>
-                    </UncontrolledDropdown>
+                    <AccountButton/>
 
                 </div>
 
@@ -118,8 +117,14 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
 
         this.props.persistenceLayerManager.reset();
 
-        window.location.href = Nav.createHashURL('logout');
-        window.location.reload();
+        firebase.auth().signOut()
+            .then(() => {
+
+                window.location.href = Nav.createHashURL('logout');
+                window.location.reload();
+
+            })
+            .catch(err => log.error("Unable to logout: ", err));
 
     }
 
@@ -138,13 +143,15 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
     }
 
     private enableCloudSync() {
-        this.changeAuthStage('overview');
+        this.changeAuthStage('login');
     }
 
     private changeAuthStage(stage?: AuthStage) {
 
         if (stage === 'login') {
-            window.location.href = 'http://localhost:8500/apps/repository/login.html';
+            const base = URLs.toBase(document.location!.href);
+            const newLocation = new URL('/apps/repository/login.html', base).toString();
+            window.location.href = newLocation;
             return;
         }
 
@@ -167,15 +174,23 @@ export class CloudAuthButton extends React.Component<IProps, IState> {
 
     private onAuth(user: firebase.User | null) {
 
-        let mode: AuthMode = 'needs-auth';
+        AuthHandlers.get().userInfo()
+            .then((userInfo) => {
 
-        if (user) {
-            mode = 'authenticated';
-        }
+                let mode: AuthMode = 'needs-auth';
 
-        this.setState({
-              mode,
-          });
+                if (user) {
+                    mode = 'authenticated';
+                }
+
+                this.setState({
+                    mode,
+                    userInfo: userInfo.getOrUndefined()
+                });
+
+
+            })
+            .catch(err => log.error("Unable to get user info: ", err));
 
     }
 
@@ -192,6 +207,7 @@ interface IProps {
 interface IState {
     readonly mode: AuthMode;
     readonly stage?: AuthStage;
+    readonly userInfo?: UserInfo;
 }
 
 type AuthMode = 'none' | 'needs-auth' | 'authenticated';

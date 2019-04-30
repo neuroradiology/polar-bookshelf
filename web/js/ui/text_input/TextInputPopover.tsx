@@ -1,8 +1,8 @@
 /* eslint react/no-multi-comp: 0, react/prop-types: 0 */
 import React from 'react';
-import {Button, Form, FormGroup, Input, Label, Popover, PopoverBody} from 'reactstrap';
+import {Button, Input, Label, Popover, PopoverBody} from 'reactstrap';
 import Popper from 'popper.js';
-import {Blackout} from '../../../../apps/repository/js/Blackout';
+import {Blackout} from '../blackout/Blackout';
 
 export class TextInputPopover extends React.Component<IProps, IState> {
 
@@ -43,25 +43,18 @@ export class TextInputPopover extends React.Component<IProps, IState> {
 
                     </div>
 
-                    <Form>
+                    <Label className="font-weight-bold" for={this.props.target + '-input'}>{this.props.title}</Label>
 
-                        <FormGroup>
+                    <Input type="text"
+                           name="text"
+                           id={this.props.target + '-input'}
+                           onKeyDown={event => this.onKeyDown(event)}
+                           defaultValue={this.props.defaultValue  || ''}
+                           onChange={(event) => this.value = event.target.value}
+                           autoFocus
+                           placeholder={this.props.placement || ''}/>
 
-                            <Label className="font-weight-bold" for={this.props.target + '-input'}>{this.props.title}</Label>
-
-                            <Input type="text"
-                                   name="text"
-                                   id={this.props.target + '-input'}
-                                   defaultValue={this.props.defaultValue  || ''}
-                                   onChange={(event) => this.value = event.target.value}
-                                   autoFocus
-                                   placeholder={this.props.placement || ''}/>
-
-                        </FormGroup>
-
-                    </Form>
-
-                    <div className="text-right">
+                    <div className="text-right mt-1">
 
                         <Button color="secondary"
                                 size="sm"
@@ -81,6 +74,14 @@ export class TextInputPopover extends React.Component<IProps, IState> {
 
 
         );
+    }
+
+    private onKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+
+        if (event.key === "Enter") {
+            this.props.onComplete(this.value);
+        }
+
     }
 
 }

@@ -2,33 +2,30 @@ import {ListenablePersistenceLayer} from '../ListenablePersistenceLayer';
 import {SimpleReactor} from '../../reactor/SimpleReactor';
 import {PersistenceLayerEvent} from '../PersistenceLayerEvent';
 import {PersistenceLayerListener} from '../PersistenceLayerListener';
-import {PersistenceLayer} from '../PersistenceLayer';
+import {PersistenceLayer, PersistenceLayerID} from '../PersistenceLayer';
 import {DocMeta} from '../../metadata/DocMeta';
 import {DocMetaFileRef, DocMetaRef} from '../DocMetaRef';
-import {DeleteResult, DocMetaSnapshotEvent, FileRef,
-        DocMetaSnapshotEventListener, SnapshotResult,
-        ErrorListener,
-    Datastore} from '../Datastore';
+import {BinaryFileData, Datastore, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileRef, SnapshotResult} from '../Datastore';
+import {WriteFileOpts} from '../Datastore';
+import {GetFileOpts} from '../Datastore';
+import {DatastoreOverview} from '../Datastore';
+import {DatastoreCapabilities} from '../Datastore';
+import {DatastoreInitOpts} from '../Datastore';
 import {PersistenceEventType} from '../PersistenceEventType';
 import {Backend} from '../Backend';
-import {DatastoreFile} from '../DatastoreFile';
-import {FileMeta} from '../Datastore';
+import {DocFileMeta} from '../DocFileMeta';
 import {Optional} from '../../util/ts/Optional';
 import {DocInfo} from '../../metadata/DocInfo';
-import {DatastoreMutation, DefaultDatastoreMutation} from '../DatastoreMutation';
+import {DatastoreMutation} from '../DatastoreMutation';
 import {NULL_FUNCTION} from '../../util/Functions';
-import {Logger} from '../../logger/Logger';
 import {Releaseable} from '../../reactor/EventListener';
-
-const log = Logger.create();
+import {WriteOpts} from '../PersistenceLayer';
 
 export abstract class AbstractAdvertisingPersistenceLayer implements ListenablePersistenceLayer {
 
+    public abstract readonly id: PersistenceLayerID;
+
     public readonly datastore: Datastore;
-
-    public readonly stashDir: string;
-
-    public readonly logsDir: string;
 
     protected readonly reactor = new SimpleReactor<PersistenceLayerEvent>();
 
@@ -40,13 +37,15 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
     protected constructor(delegate: PersistenceLayer) {
         this.datastore = delegate.datastore;
         this.delegate = delegate;
-        this.stashDir = this.delegate.stashDir;
-        this.logsDir = this.delegate.logsDir;
     }
 
-    public abstract init(): Promise<void>;
+    public init(errorListener?: ErrorListener, opts?: DatastoreInitOpts): Promise<void> {
+        return this.delegate.init(errorListener, opts);
+    }
 
-    public abstract stop(): Promise<void>;
+    public stop(): Promise<void> {
+        return this.delegate.stop();
+    }
 
     public addEventListener(listener: PersistenceLayerListener): Releaseable {
         return this.reactor.addEventListener(listener);
@@ -66,15 +65,15 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
 
     public async writeDocMeta(docMeta: DocMeta, datastoreMutation?: DatastoreMutation<DocInfo>): Promise<DocInfo> {
 
-        return this.handleWrite(docMeta, async () => await this.delegate.writeDocMeta(docMeta, datastoreMutation));
+        return await this.handleWrite(docMeta, async () => await this.delegate.writeDocMeta(docMeta, datastoreMutation));
 
     }
 
     public async write(fingerprint: string,
                        docMeta: DocMeta,
-                       datastoreMutation: DatastoreMutation<DocInfo> = new DefaultDatastoreMutation()): Promise<DocInfo> {
+                       opts?: WriteOpts): Promise<DocInfo> {
 
-        return this.handleWrite(docMeta, async () => await this.delegate.write(fingerprint, docMeta, datastoreMutation));
+        return await this.handleWrite(docMeta, async () => await this.delegate.write(fingerprint, docMeta, opts));
 
     }
 
@@ -97,16 +96,16 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
 
     }
 
-    public async synchronizeDocs(...fingerprints: string[]): Promise<void> {
-        return this.delegate.synchronizeDocs(...fingerprints);
+    public async synchronizeDocs(...docMetaRefs: DocMetaRef[]): Promise<void> {
+        return this.delegate.synchronizeDocs(...docMetaRefs);
     }
 
     public async contains(fingerprint: string): Promise<boolean> {
         return this.delegate.contains(fingerprint);
     }
 
-    public getDocMetaFiles(): Promise<DocMetaRef[]> {
-        return this.delegate.getDocMetaFiles();
+    public getDocMetaRefs(): Promise<DocMetaRef[]> {
+        return this.delegate.getDocMetaRefs();
     }
 
     public snapshot(listener: DocMetaSnapshotEventListener,
@@ -147,16 +146,16 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
         this.reactor.dispatchEvent(event);
     }
 
-    public writeFile(backend: Backend, ref: FileRef, data: Buffer | string, meta: FileMeta): Promise<DatastoreFile> {
-        return this.delegate.writeFile(backend, ref, data, meta);
+    public writeFile(backend: Backend, ref: FileRef, data: BinaryFileData, opts?: WriteFileOpts): Promise<DocFileMeta> {
+        return this.delegate.writeFile(backend, ref, data, opts);
     }
 
     public containsFile(backend: Backend, ref: FileRef): Promise<boolean> {
         return this.delegate.containsFile(backend, ref);
     }
 
-    public getFile(backend: Backend, ref: FileRef): Promise<Optional<DatastoreFile>> {
-        return this.delegate.getFile(backend, ref);
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
+        return this.delegate.getFile(backend, ref, opts);
     }
 
     public addDocMetaSnapshotEventListener(docMetaSnapshotEventListener: DocMetaSnapshotEventListener): void {
@@ -164,6 +163,14 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
     }
 
     protected abstract broadcastEvent(event: PersistenceLayerEvent): void;
+
+    public async overview(): Promise<DatastoreOverview | undefined> {
+        return await this.delegate.overview();
+    }
+
+    public capabilities(): DatastoreCapabilities {
+        return this.delegate.capabilities();
+    }
 
     public async deactivate() {
         await this.delegate.deactivate();

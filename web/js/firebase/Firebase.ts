@@ -1,5 +1,4 @@
 import * as firebase from './lib/firebase';
-// import fb = firebase;
 
 export class Firebase {
 
@@ -9,7 +8,6 @@ export class Firebase {
      * Perform init of Firebase with our auth credentials.
      */
     public static init(): firebase.app.App {
-
 
         if (this.app) {
             return this.app;
@@ -22,7 +20,7 @@ export class Firebase {
             projectId: "polar-32b0f",
             storageBucket: "polar-32b0f.appspot.com",
             messagingSenderId: "919499255851",
-            timestampsInSnapshots: true
+            // timestampsInSnapshots: true
         };
 
         return this.app = firebase.initializeApp(config);

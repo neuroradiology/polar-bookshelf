@@ -1,5 +1,4 @@
 import {ResourcePaths} from "../../electron/webresource/ResourcePaths";
-import {PHZLoader} from '../../apps/main/loaders/PHZLoader';
 import {ipcMain} from 'electron';
 import {Preconditions} from '../../Preconditions';
 import {Logger} from '../../logger/Logger';
@@ -11,6 +10,8 @@ import {CaptureOpts} from '../CaptureOpts';
 import {StartCaptureMessage} from './CaptureClient';
 import {Directories} from '../../datastore/Directories';
 import {CacheRegistry} from '../../backend/proxyserver/CacheRegistry';
+import {PHZLoader} from "../../apps/main/file_loaders/PHZLoader";
+import {FileRegistry} from '../../backend/webserver/FileRegistry';
 
 const log = Logger.create();
 
@@ -18,15 +19,12 @@ export class CaptureController {
 
     private readonly directories: Directories = new Directories();
 
-    private readonly cacheRegistry: CacheRegistry;
-
     private readonly phzLoader: PHZLoader;
 
-    constructor(cacheRegistry: CacheRegistry) {
+    constructor(private readonly cacheRegistry: CacheRegistry,
+                private readonly fileRegistry: FileRegistry) {
 
-        this.cacheRegistry = cacheRegistry;
-
-        this.phzLoader = new PHZLoader({cacheRegistry: this.cacheRegistry});
+        this.phzLoader = new PHZLoader(cacheRegistry, fileRegistry);
 
     }
 
@@ -58,7 +56,8 @@ export class CaptureController {
         const captureResult = await this.runCapture(webContents, url);
         //
         // let captureResult = {
-        //     path: "/home/burton/.polar/stash/UK_unveils_new_Tempest_fighter_jet_model___BBC_News.phz"
+        //     path:
+        // "/home/burton/.polar/stash/UK_unveils_new_Tempest_fighter_jet_model___BBC_News.phz"
         // };
 
         // now load the phz in the target window
@@ -67,16 +66,9 @@ export class CaptureController {
 
     }
 
-    /**
-     * Setup the
-     *
-     * @param webContents {Electron.WebContents}
-     * @param url {string}
-     *
-     */
     private async loadApp(webContents: Electron.WebContents, url: string): Promise<Electron.WebContents> {
 
-        return new Promise<Electron.WebContents>(resolve => {
+        return new Promise<Electron.WebContents>(async resolve => {
 
             log.debug("Starting capture for URL: " + url);
 
@@ -89,7 +81,7 @@ export class CaptureController {
 
             log.debug("Loading app: ", appURL);
 
-            webContents.loadURL(appURL);
+            await webContents.loadURL(appURL);
 
         });
 

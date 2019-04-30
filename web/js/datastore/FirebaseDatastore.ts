@@ -1,55 +1,51 @@
-import {
-    FileSynchronizationEvent, Datastore, DeleteResult,
-    DocMetaSnapshotEvent, FileMeta,
-    InitResult, SynchronizingDatastore, MutationType, FileRef,
-    DocMetaMutation, DocMetaSnapshotEventListener, SnapshotResult,
-    DocMetaSnapshotBatch, ErrorListener, AbstractDatastore, DatastoreConsistency
-} from './Datastore';
+import {AbstractDatastore, BinaryFileData, Datastore, DatastoreConsistency, DatastoreInitOpts, DatastoreOverview, DeleteResult, DocMetaMutation, DocMetaSnapshotEvent, DocMetaSnapshotEventListener, ErrorListener, FileRef, InitResult, MutationType, PrefsProvider, SnapshotResult, Visibility} from './Datastore';
+import {WritableBinaryMetaDatastore} from './Datastore';
+import {DefaultWriteFileOpts} from './Datastore';
+import {DatastoreCapabilities} from './Datastore';
+import {GetFileOpts} from './Datastore';
+import {WriteFileOpts} from './Datastore';
+import {NetworkLayers} from './Datastore';
+import {WriteOpts} from './Datastore';
+import {FileMeta} from './Datastore';
 import {Logger} from '../logger/Logger';
 import {DocMetaFileRef, DocMetaFileRefs, DocMetaRef} from './DocMetaRef';
-import {Directories} from './Directories';
 import {Backend} from './Backend';
-import {DatastoreFile} from './DatastoreFile';
+import {DocFileMeta} from './DocFileMeta';
 import {Optional} from '../util/ts/Optional';
 import {Firestore} from '../firebase/Firestore';
 import {DocInfo, IDocInfo} from '../metadata/DocInfo';
 import {Preconditions} from '../Preconditions';
+import {isPresent} from '../Preconditions';
 import {Hashcodes} from '../Hashcodes';
 import * as firebase from '../firebase/lib/firebase';
 import {Dictionaries} from '../util/Dictionaries';
-import {DatastoreFiles} from './DatastoreFiles';
 import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
-import {IEventDispatcher, SimpleReactor} from '../reactor/SimpleReactor';
 import {NULL_FUNCTION} from '../util/Functions';
 import {DocMetas} from "../metadata/DocMetas";
 import {Percentages} from '../util/Percentages';
-import {ProgressTracker} from '../util/ProgressTracker';
-import {Providers, AsyncProviders} from '../util/Providers';
+import {Percentage, ProgressTracker} from '../util/ProgressTracker';
+import {AsyncProviders, Providers} from '../util/Providers';
 import {FilePaths} from '../util/FilePaths';
-import {FileHandle, FileHandles, Files} from '../util/Files';
+import {FileHandle, FileHandles} from '../util/Files';
 import {UserID} from '../firebase/Firebase';
+import {IEventDispatcher, SimpleReactor} from '../reactor/SimpleReactor';
+import {LocalStoragePrefs} from '../util/prefs/Prefs';
+import {ProgressMessage} from '../ui/progress_bar/ProgressMessage';
+import {ProgressMessages} from '../ui/progress_bar/ProgressMessages';
+import {Stopwatches} from '../util/Stopwatches';
+import {AppRuntime} from '../AppRuntime';
+import {Promises} from '../util/Promises';
+import {URLs} from '../util/URLs';
+import {Datastores} from './Datastores';
+import {Latch} from '../util/Latch';
 
 const log = Logger.create();
 
-// You can allow users to sign in to your app using multiple authentication
-// providers by linking auth provider credentials to an existing user account.
-// Users are identifiable by the same Firebase user ID regardless of the
-// authentication provider they used to sign in. For example, a user who signed
-// in with a password can link a Google account and sign in with either method
-// in the future. Or, an anonymous user can link a Facebook account and then,
-// later, sign in with Facebook to continue using your app.
+let STORAGE_UPLOAD_ID: number = 0;
 
-export class FirebaseDatastore extends AbstractDatastore implements Datastore {
+export class FirebaseDatastore extends AbstractDatastore implements Datastore, WritableBinaryMetaDatastore {
 
     public readonly id = 'firebase';
-
-    public readonly stashDir: string;
-
-    public readonly logsDir: string;
-
-    public readonly directories: Directories;
-
-    public enablePersistence: boolean = true;
 
     private app?: firebase.app.App;
 
@@ -59,15 +55,16 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
     private initialized: boolean = false;
 
+    private primarySnapshot?: SnapshotResult;
+
+    private readonly docMetaSnapshotEventDispatcher: IEventDispatcher<DocMetaSnapshotEvent> = new SimpleReactor();
+
     constructor() {
         super();
-        this.directories = new Directories();
-        this.stashDir = this.directories.stashDir;
-        this.logsDir = this.directories.logsDir;
-
     }
 
-    public async init(errorListener: ErrorListener = NULL_FUNCTION): Promise<InitResult> {
+    public async init(errorListener: ErrorListener = NULL_FUNCTION,
+                      opts: DatastoreInitOpts = {}): Promise<InitResult> {
 
         if (this.initialized) {
             return {};
@@ -75,8 +72,22 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         // get the firebase app. Make sure we are initialized externally.
         this.app = firebase.app();
-        this.firestore = await Firestore.getInstance({enablePersistence: this.enablePersistence});
+        this.firestore = await Firestore.getInstance();
         this.storage = firebase.storage();
+
+        if (opts.noInitialSnapshot) {
+            log.debug("Skipping initial snapshot");
+        } else {
+
+            log.debug("Performing initial snapshot");
+
+            // do not run this if we specify options of noInitialSnapshot
+
+            const snapshotListener = async (event: DocMetaSnapshotEvent) => this.docMetaSnapshotEventDispatcher.dispatchEvent(event);
+
+            this.primarySnapshot = await this.snapshot(snapshotListener, errorListener);
+
+        }
 
         this.initialized = true;
 
@@ -90,7 +101,7 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
         // setup the initial snapshot so that we query for the users existing
         // data...
 
-        const uid = this.getUserID();
+        const uid = FirebaseDatastore.getUserID();
 
         // start synchronizing the datastore.  You MUST register your listeners
         // BEFORE calling init if you wish to listen to the full stream of
@@ -104,7 +115,6 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
         const query = this.firestore!
             .collection(DatastoreCollection.DOC_INFO)
             .where('uid', '==', uid);
-
 
         type BatchIDMap = {
             [P in DatastoreConsistency]: number;
@@ -138,6 +148,27 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
             errorListener(err);
         };
 
+
+        if (this.preferredSource() === 'cache') {
+
+            // Try to get the FIRST snapshot from the cache if possible and then
+            // continue after that working with server snapshots and updated
+            // data
+
+            try {
+
+                const stopwatch = Stopwatches.create();
+                const cachedSnapshot = await query.get({ source: 'cache' });
+                log.info("Initial cached snapshot duration: ", stopwatch.stop());
+
+                onNextForSnapshot(cachedSnapshot);
+
+            } catch (e) {
+                // no cached snapshot is available and that's ok.
+            }
+
+        }
+
         const unsubscribe =
             query.onSnapshot({includeMetadataChanges: true}, onNextForSnapshot, onSnapshotError);
 
@@ -149,7 +180,9 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
     public async stop() {
 
-        // TODO: all snapshots that have been handed out should be stopped...
+        if (this.primarySnapshot && this.primarySnapshot.unsubscribe) {
+            this.primarySnapshot.unsubscribe();
+        }
 
     }
 
@@ -171,6 +204,8 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
     public async delete(docMetaFileRef: DocMetaFileRef,
                         datastoreMutation: DatastoreMutation<boolean> = new DefaultDatastoreMutation()): Promise<Readonly<DeleteResult>> {
 
+        log.info("delete: ", docMetaFileRef);
+
         if (docMetaFileRef.docFile && docMetaFileRef.docFile.name) {
 
             // the PDF/PHZ data file should be added as a stash file via
@@ -179,28 +214,29 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         }
 
-        const uid = this.getUserID();
-        const id = this.computeDocMetaID(uid, docMetaFileRef.fingerprint);
-
-        const docMetaRef = this.firestore!
-            .collection(DatastoreCollection.DOC_META)
-            .doc(id);
+        const id = FirebaseDatastore.computeDocMetaID(docMetaFileRef.fingerprint);
 
         const docInfoRef = this.firestore!
             .collection(DatastoreCollection.DOC_INFO)
             .doc(id);
 
+        const docMetaRef = this.firestore!
+            .collection(DatastoreCollection.DOC_META)
+            .doc(id);
+
         try {
 
-            this.handleDatastoreMutations(docMetaRef, datastoreMutation);
+            this.handleDatastoreMutations(docMetaRef, datastoreMutation, 'delete');
 
-            const commitPromise = this.waitForCommit(docMetaRef);
-            await docMetaRef.delete();
+            const commitPromise = Promise.all([
+                this.waitForCommit(docMetaRef),
+                this.waitForCommit(docInfoRef)
+            ]);
 
             const batch = this.firestore!.batch();
 
-            batch.delete(docMetaRef);
             batch.delete(docInfoRef);
+            batch.delete(docMetaRef);
 
             await batch.commit();
 
@@ -218,19 +254,67 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
      * Get the DocMeta we currently in the datastore for this given
      * fingerprint or null if it does not exist.
      */
-    public async getDocMeta(fingerprint: string): Promise<string | null> {
+    public async getDocMeta(fingerprint: string, opts: GetDocMetaOpts = {}): Promise<string | null> {
 
-        const uid = this.getUserID();
-        const id = this.computeDocMetaID(uid, fingerprint);
+        const id = FirebaseDatastore.computeDocMetaID(fingerprint);
 
-        const ref = this.firestore!.collection(DatastoreCollection.DOC_META).doc(id);
+        return await this.getDocMetaDirectly(id, opts);
 
-        const snapshot = await ref.get();
+    }
+
+    /**
+     * Get the DocMeta if from teh raw ID.
+     * @param id
+     */
+    public async getDocMetaDirectly(id: string,
+                                    opts: GetDocMetaOpts = {}): Promise<string | null> {
+
+        const ref = this.firestore!
+            .collection(DatastoreCollection.DOC_META)
+            .doc(id);
+
+        const createSnapshot = async () => {
+
+            // TODO: lift this out into its own method.
+
+            const preferredSource = opts.preferredSource || this.preferredSource();
+
+            if (preferredSource === 'cache') {
+
+                // Firebase supports three cache strategies.  The first
+                // (default) is server with fall back to cache but what we
+                // need is the reverse.  We need cache but server refresh to
+                // pull the up-to-date copy.
+                //
+                // What we now do is we get two promises, then return the
+                // first that works or throw an error if both fail.
+                //
+                // In this situation we ALWAYs go to the server though
+                // because we need to get the up-to-date copy to refresh
+                // BUT we can get the initial version FASTER since we
+                // can resolve it from cache.
+
+                const cachePromise = ref.get({ source: 'cache' });
+                const serverPromise = ref.get({ source: 'server' });
+
+                return await Promises.any(cachePromise, serverPromise);
+
+            } else if (isPresent(opts.preferredSource)) {
+                return await ref.get({ source: opts.preferredSource });
+            } else {
+                // now revert to checking the server, then cache if we're
+                // offline.
+                return await ref.get();
+            }
+
+        };
+
+        const snapshot = await createSnapshot();
 
         const recordHolder = <RecordHolder<DocMetaHolder> | undefined> snapshot.data();
 
         if (! recordHolder) {
-            log.warn("FIXME: could not get docMeta with id: " + id);
+            log.warn("Could not get docMeta with id: " + id);
             return null;
         }
 
@@ -238,142 +322,255 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    // TODO: the cloud storage operations are possibly unsafe and could
-    // leave local files in place or too many remote files but this is good
-    // for a first MVP pass.
+    /**
+     * We have to keep track of pending file writes because it's possible that
+     * two systems race and attempt to write the same file at once.
+     *
+     * TODO: We should probably abort this in the future if the hashcodes for
+     * the documents we're trying to write are present but not identical or the
+     * visibility settings are different.  Either that or stack them so that
+     * the second (with different settings) is performed after the first.
+     */
+    private pendingFileWrites: {[key: string]: Latch<DocFileMeta>} = {};
 
     public async writeFile(backend: Backend,
                            ref: FileRef,
-                           data: FileHandle | Buffer | string ,
-                           meta: FileMeta = {}): Promise<DatastoreFile> {
+                           data: BinaryFileData,
+                           opts: WriteFileOpts = new DefaultWriteFileOpts()): Promise<DocFileMeta> {
 
-        const storage = this.storage!;
+        // TODO: the latch handling, file writing, and progress notification
+        // should all be decoupled into their own functions.
+
+        log.debug(`writeFile: ${backend}: `, ref);
 
         const storagePath = this.computeStoragePath(backend, ref);
+        const pendingFileWriteKey = storagePath.path;
 
-        const fileRef = storage.ref().child(storagePath.path);
+        let latch = this.pendingFileWrites[pendingFileWriteKey];
 
-        let uploadTask: firebase.storage.UploadTask;
-
-        // TODO: we need to compute visibility for this for the future.
-
-        // stick the uid into the metadata which we use for authorization of the
-        // blob when not public.
-        meta = Object.assign(meta, {
-            uid: this.getUserID(),
-            visibility: Visibility.PRIVATE
-        });
-
-        const metadata: firebase.storage.UploadMetadata = {customMetadata: meta};
-
-        if (storagePath.settings) {
-            metadata.contentType = storagePath.settings.contentType;
-            metadata.cacheControl = storagePath.settings.cacheControl;
+        if (latch) {
+            log.warn("Write already pending.  Going to return latch.");
+            return this.pendingFileWrites[pendingFileWriteKey].get();
         }
 
-        if (typeof data === 'string') {
-            uploadTask = fileRef.putString(data, 'raw', metadata);
-        } else {
+        latch = this.pendingFileWrites[pendingFileWriteKey] = new Latch();
 
-            if (FileHandles.isFileHandle(data)) {
+        try {
 
-                // MEMORY_ALLOCATION_ISSUE migrate this to a streaming API to
-                // help with huge PDFs.
+            const visibility = opts.visibility || Visibility.PRIVATE;
 
-                // it's not a buffer but convert it to one...
-                const fileHandle = <FileHandle> data;
-                data = await Files.readFileAsync(fileHandle.path);
+            const storage = this.storage!;
+
+            const fileRef = storage.ref().child(storagePath.path);
+
+            if (!isPresent(data)) {
+
+                if (opts.updateMeta) {
+
+                    const meta: FileMeta = { visibility };
+
+                    // https://firebase.google.com/docs/storage/web/file-metadata
+                    //
+                    // Only the properties specified in the metadata are updated,
+                    // all others are left unmodified.
+
+                    await fileRef.updateMetadata(meta);
+
+                    log.info("File metadata updated with: ", meta);
+
+                    // TODO: I don't like having to call getFile again but hopefully
+                    // it should be cached at this point.
+                    return (await this.getFile(backend, ref)).get();
+
+                } else {
+                    // when the caller specifies null they mean that there's a
+                    // metadata update which needs to be applied.
+                    throw new Error("No data present");
+                }
 
             }
 
-            uploadTask = fileRef.put(Uint8Array.from(<Buffer> data), metadata);
-
-        }
-
-        // TODO: we can get progress from the uploadTask here.
-
-        const started = Date.now();
-
-        uploadTask.on('state_changed', (snapshotData: any) => {
-
-            const now = Date.now();
-            const duration = now - started;
-
-            const snapshot: firebase.storage.UploadTaskSnapshot = snapshotData;
-
-            const progress = Percentages.calculate(snapshot.bytesTransferred, snapshot.totalBytes);
-            log.notice('Upload is ' + progress + '%// done');
-
-            switch (snapshot.state) {
-                case firebase.storage.TaskState.PAUSED:
-                    // or 'paused'
-                    // console.log('Upload is paused');
-                    break;
-
-                case firebase.storage.TaskState.RUNNING:
-                    // or 'running'
-                    // console.log('Upload is running');
-                    break;
+            if (await this.containsFile(backend, ref)) {
+                // the file is already in the datastore so don't attempt to
+                // overwrite it for now.  The files are immutable and we don't
+                // accept overwrites.
+                return (await this.getFile(backend, ref)).get();
             }
 
-        });
+            let uploadTask: firebase.storage.UploadTask;
 
-        const uploadTaskSnapshot = await uploadTask;
+            const uid = FirebaseDatastore.getUserID();
 
-        const downloadURL = uploadTaskSnapshot.downloadURL;
+            // stick the uid into the metadata which we use for authorization of the
+            // blob when not public.
+            const meta = { uid, visibility };
 
-        return {
-            backend,
-            ref,
-            url: downloadURL!,
-            meta
-        };
+            const metadata: firebase.storage.UploadMetadata = { customMetadata: meta };
+
+            if (storagePath.settings) {
+                metadata.contentType = storagePath.settings.contentType;
+                metadata.cacheControl = storagePath.settings.cacheControl;
+            }
+
+            if (typeof data === 'string') {
+                uploadTask = fileRef.putString(data, 'raw', metadata);
+            } else if (data instanceof Blob) {
+                uploadTask = fileRef.put(data, metadata);
+            } else {
+
+                if (FileHandles.isFileHandle(data)) {
+
+                    // This only happens in the desktop app so we can read file URLs
+                    // to blobs and otherwise it converts URLs to files.
+                    const fileHandle = <FileHandle> data;
+
+                    const fileURL = FilePaths.toURL(fileHandle.path);
+                    const blob = await URLs.toBlob(fileURL);
+                    uploadTask = fileRef.put(blob, metadata);
+
+                } else {
+                    uploadTask = fileRef.put(Uint8Array.from(<Buffer> data), metadata);
+                }
+
+            }
+
+            // TODO: we can get progress from the uploadTask here.
+
+            const started = Date.now();
+
+            const task = ProgressTracker.createNonce();
+
+            // TODO: create an index of pending progress messages and show the
+            // OLDEST on in the progress bar.. but add like a 5 minute timeout in
+            // case it's not updated.   Each progress message MUST have a 'created'
+            // timestamp from now on so we can GC them and or ignore them if they're
+            // never used again
+
+            const progressID = 'firebase-upload-' + STORAGE_UPLOAD_ID++;
+
+            uploadTask.on('state_changed', (snapshotData: any) => {
+
+                const snapshot: firebase.storage.UploadTaskSnapshot = snapshotData;
+
+                const now = Date.now();
+                const duration = now - started;
+
+                const percentage = Percentages.calculate(snapshot.bytesTransferred, snapshot.totalBytes);
+                log.notice('Upload is ' + percentage + '% done');
+
+                const progress: ProgressMessage = {
+                    id: progressID,
+                    task,
+                    completed: snapshot.bytesTransferred,
+                    total: snapshot.totalBytes,
+                    duration,
+                    progress: <Percentage> percentage,
+                    timestamp: Date.now(),
+                    name: `${backend}/${ref.name}`
+                };
+
+                ProgressMessages.broadcast(progress);
+
+                switch (snapshot.state) {
+
+                    case firebase.storage.TaskState.PAUSED:
+                        // or 'paused'
+                        // console.log('Upload is paused');
+                        break;
+
+                    case firebase.storage.TaskState.RUNNING:
+                        // or 'running'
+                        // console.log('Upload is running');
+                        break;
+                }
+
+            });
+
+            const uploadTaskSnapshot = await uploadTask;
+
+            const downloadURL = uploadTaskSnapshot.downloadURL;
+
+            const result: DocFileMeta = {
+                backend,
+                ref,
+                url: downloadURL!
+            };
+
+            latch.resolve(result);
+
+            // now we have to clean up after our latch.
+            delete this.pendingFileWrites[pendingFileWriteKey];
+
+            return result;
+
+        } catch (e) {
+            latch.reject(e);
+            throw e;
+        }
 
     }
 
-    public async getFile(backend: Backend, ref: FileRef): Promise<Optional<DatastoreFile>> {
+    private createFileMetaID(backend: Backend, ref: FileRef) {
+        const storagePath = this.computeStoragePath(backend, ref);
+        return Hashcodes.create(storagePath.path);
+    }
+
+    public async getFile(backend: Backend,
+                         ref: FileRef,
+                         opts: GetFileOpts = {}): Promise<Optional<DocFileMeta>> {
+
+        Datastores.assertNetworkLayer(this, opts.networkLayer);
+
+        log.debug("getFile");
 
         const storage = this.storage!;
 
         const storagePath = this.computeStoragePath(backend, ref);
 
-        const fileRef = storage.ref().child(storagePath.path);
+        const storageRef = storage.ref().child(storagePath.path);
 
-        const url: string = await fileRef.getDownloadURL();
-        const metadata = await fileRef.getMetadata();
-        const meta = metadata.customMetadata;
+        const downloadURL =
+            await DownloadURLs.computeDownloadURL(backend, ref, storagePath, storageRef, opts);
 
-        return Optional.of({backend, ref, url, meta});
+        if (! downloadURL) {
+            return Optional.empty();
+        }
+
+        const url: string = this.wrappedDownloadURL(downloadURL);
+
+        return Optional.of({ backend, ref, url});
+
+    }
+    /**
+     * Optionally wrap the download URL with a middleware URL which can perform
+     * operations like authentication for the underlying download URL.
+     */
+    private wrappedDownloadURL(url: string) {
+
+        return url;
+
+        // this is disabled for now.
+        // return "https://us-central1-polar-cors.cloudfunctions.net/cors?url=" + encodeURIComponent(url);
 
     }
 
     public async containsFile(backend: Backend, ref: FileRef): Promise<boolean> {
 
-        // TODO: we should have some cache here to avoid checking the server too
-        // often but I don't think this is goign to be used often.
-
         const storagePath = this.computeStoragePath(backend, ref);
 
         const storage = this.storage!;
-        const fileRef = storage.ref().child(storagePath.path);
+        const storageRef = storage.ref().child(storagePath.path);
 
-        try {
-            await fileRef.getMetadata();
-            return true;
-        } catch (e) {
+        const downloadURL =
+            await DownloadURLs.computeDownloadURL(backend, ref, storagePath, storageRef, {});
 
-            if (e.code === "storage/object-not-found") {
-                return false;
-            }
-
-            // some other type of exception ias occurred
-            throw e;
-
-        }
+        return isPresent(downloadURL);
 
     }
 
     public async deleteFile(backend: Backend, ref: FileRef): Promise<void> {
+
+        log.debug("deleteFile: ", backend, ref);
 
         try {
 
@@ -405,14 +602,17 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
     public async write(fingerprint: string,
                        data: string,
                        docInfo: DocInfo,
-                       datastoreMutation: DatastoreMutation<boolean> = new DefaultDatastoreMutation()) {
+                       opts: WriteOpts = {}) {
+
+        await this.handleWriteFile(opts);
+
+        const datastoreMutation = opts.datastoreMutation || new DefaultDatastoreMutation();
 
         try {
 
             docInfo = Object.assign({}, Dictionaries.onlyDefinedProperties(docInfo));
 
-            const uid = this.getUserID();
-            const id = this.computeDocMetaID(uid, fingerprint);
+            const id = FirebaseDatastore.computeDocMetaID(fingerprint);
 
             const docMetaRef = this.firestore!
                 .collection(DatastoreCollection.DOC_META)
@@ -422,16 +622,23 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
                 .collection(DatastoreCollection.DOC_INFO)
                 .doc(id);
 
-            this.handleDatastoreMutations(docMetaRef, datastoreMutation);
+            this.handleDatastoreMutations(docMetaRef, datastoreMutation, 'write');
 
-            const docMetaCommitPromise = this.waitForCommit(docMetaRef);
+            const commitPromise = Promise.all([
+                this.waitForCommit(docMetaRef),
+                this.waitForCommit(docInfoRef)
+            ]);
 
             log.debug("Setting...");
 
             const batch = this.firestore!.batch();
 
-            batch.set(docMetaRef, this.createDocForDocMeta(docInfo, data));
-            batch.set(docInfoRef, this.createDocForDocInfo(docInfo));
+            const visibility = docInfo.visibility;
+
+            log.info(`Write of doc with id ${id} and visibility: ${visibility}`);
+
+            batch.set(docMetaRef, this.createDocForDocMeta(docInfo, data, visibility));
+            batch.set(docInfoRef, this.createDocForDocInfo(docInfo, visibility));
 
             await batch.commit();
 
@@ -440,7 +647,7 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
             // we need to make sure that we only return when it's committed
             // remotely...
             log.debug("Waiting for promise...");
-            await docMetaCommitPromise;
+            await commitPromise;
             log.debug("Waiting for promise...done");
 
         } finally {
@@ -449,13 +656,32 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
     }
 
+    public async overview(): Promise<DatastoreOverview | undefined> {
+        return undefined;
+    }
+
+    public capabilities(): DatastoreCapabilities {
+
+        return {
+            networkLayers: NetworkLayers.WEB,
+            permission: {mode: 'rw'}
+        };
+
+    }
+
+    public getPrefs(): PrefsProvider {
+        return Providers.toInterface(() => new LocalStoragePrefs());
+    }
+
     /**
      * Create the document that we will store in for the DocMeta
      */
-    private createDocForDocMeta(docInfo: DocInfo, docMeta: string) {
+    private createDocForDocMeta(docInfo: DocInfo,
+                                docMeta: string,
+                                visibility: Visibility = Visibility.PRIVATE) {
 
-        const uid = this.getUserID();
-        const id = this.computeDocMetaID(uid, docInfo.fingerprint);
+        const uid = FirebaseDatastore.getUserID();
+        const id = FirebaseDatastore.computeDocMetaID(docInfo.fingerprint, uid);
 
         const docMetaHolder: DocMetaHolder = {
             docInfo,
@@ -465,7 +691,7 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
         const recordHolder: RecordHolder<DocMetaHolder> = {
             uid,
             id,
-            visibility: Visibility.PRIVATE,
+            visibility,
             value: docMetaHolder
         };
 
@@ -473,15 +699,16 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    private createDocForDocInfo(docInfo: DocInfo) {
+    private createDocForDocInfo(docInfo: DocInfo,
+                                visibility: Visibility = Visibility.PRIVATE) {
 
-        const uid = this.getUserID();
-        const id = this.computeDocMetaID(uid, docInfo.fingerprint);
+        const uid = FirebaseDatastore.getUserID();
+        const id = FirebaseDatastore.computeDocMetaID(docInfo.fingerprint, uid);
 
         const recordHolder: RecordHolder<DocInfo> = {
             uid,
             id,
-            visibility: Visibility.PRIVATE,
+            visibility,
             value: docInfo
         };
 
@@ -489,9 +716,9 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    public async getDocMetaFiles(): Promise<DocMetaRef[]> {
+    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
 
-        const uid = this.getUserID();
+        const uid = FirebaseDatastore.getUserID();
 
         const snapshot = await this.firestore!
             .collection(DatastoreCollection.DOC_META)
@@ -532,10 +759,9 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         let key: any;
 
-        const uid = this.getUserID();
+        const uid = FirebaseDatastore.getUserID();
 
         if (fileRef.hashcode) {
-
 
             key = {
 
@@ -555,9 +781,10 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         } else {
 
-            // build a unique name from the filename and the UUID of the user.
+            // Build a unique name from the filename and the UUID of the user.
             // this shouldn't actually be used except in the cases of VERY old
             // datastores.
+            //
             key = {
                 uid,
                 filename: fileRef.name
@@ -577,7 +804,7 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         const PUBLIC_MAX_AGE_1WEEK = 'public,max-age=604800';
 
-        const ext = optionalExt.getOrElse('');
+        const ext = optionalExt.getOrElse('').toLowerCase();
 
         if (ext === 'jpg' || ext === 'jpeg') {
 
@@ -647,13 +874,14 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
     }
 
     private handleDatastoreMutations(ref: firebase.firestore.DocumentReference,
-                                     datastoreMutation: DatastoreMutation<boolean>) {
+                                     datastoreMutation: DatastoreMutation<boolean>,
+                                     op: 'write' | 'delete') {
 
         const unsubscribeToSnapshot = ref.onSnapshot({includeMetadataChanges: true}, snapshot => {
 
             if (snapshot.metadata.fromCache && snapshot.metadata.hasPendingWrites) {
                 datastoreMutation.written.resolve(true);
-                log.debug("Got written for: ", ref);
+                log.debug(`Got written mutation with op: ${op}`, ref);
 
             }
 
@@ -667,7 +895,7 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
                 datastoreMutation.written.resolve(true);
                 datastoreMutation.committed.resolve(true);
-                log.debug("Got committed for: ", ref);
+                log.debug(`Got committed mutation with op: ${op}`, ref);
 
                 // not interested in snapshots from this document any more.
                 unsubscribeToSnapshot();
@@ -702,6 +930,90 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         log.debug("onSnapshot... ");
 
+        type DocMetaData = string | null;
+
+        interface DocMetaLookup {
+            get(fingerprint: string): Promise<DocMetaData>;
+
+            // [fingerprint: string]: DocMetaData;
+        }
+
+        /**
+         * Local cache for storing DocMeta that we haven't fetched yet.
+         */
+        interface DocMetaCache {
+            [fingerprint: string]: DocMetaData;
+        }
+
+        const datastore = this;
+
+        class DefaultDocMetaLookup implements DocMetaLookup {
+
+            constructor(private readonly cache: DocMetaCache) {
+
+            }
+
+            public async get(fingerprint: string): Promise<DocMetaData> {
+
+                const result = this.cache[fingerprint];
+
+                if (isPresent(result)) {
+                    return result;
+                }
+
+                // we don't have this in the local cache which we SHOULD but
+                // dont' generate an error here.  We should force a fetch from
+                // the server.
+
+                log.warn("No entry for fingerprint (fetching directly from server): " + fingerprint);
+
+                return await datastore.getDocMeta(fingerprint, {preferredSource: 'server'});
+
+            }
+
+        }
+
+        // TODO: we should shave ANOTHER 500ms by hinting that this page will
+        // need BOTH the doc_meta and doc_info data (I think) by loading them
+        // both at the same time (in parallel via Promises.all)
+        const createDocMetaLookup = async (useCache: boolean): Promise<DocMetaLookup> => {
+
+            const uid = FirebaseDatastore.getUserID();
+
+            const query = this.firestore!
+                .collection(DatastoreCollection.DOC_META)
+                .where('uid', '==', uid);
+
+            const source = useCache ? 'cache' : 'server';
+
+            const stopwatch = Stopwatches.create();
+            const snapshot = await query.get({source});
+            log.info("DocMeta lookup snapshot duration: ", stopwatch.stop());
+
+            const docChanges = snapshot.docChanges();
+
+            const cache: DocMetaCache = {};
+
+            // TODO: if we did a lookup by ID and not by fingerprint we could
+            // probably keep the data JUST within localStorage until it's
+            // requested to avoid keeping it in this in-memory map which could
+            // help with memory pressure but we should wait until this is a
+            // problem as it's a premature optimization right now.
+
+            for (const docChange of docChanges) {
+                const record = <RecordHolder<DocMetaHolder>> docChange.doc.data();
+                const fingerprint = record.value.docInfo.fingerprint;
+                const data = record.value.value;
+                cache[fingerprint] = data;
+            }
+
+            return new DefaultDocMetaLookup(cache);
+
+        };
+
+        const docMetaLookupProvider =
+            AsyncProviders.memoize(() => createDocMetaLookup(snapshot.metadata.fromCache));
+
         const docMetaMutationFromRecord = (record: RecordHolder<DocInfo>,
                                            mutationType: MutationType = 'created') => {
 
@@ -710,14 +1022,20 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
             const docInfo = record.value;
 
             const dataProvider = async () => {
-                return await this.getDocMeta(docInfo.fingerprint);
+                const docMetaLookup = await docMetaLookupProvider();
+                return docMetaLookup.get(docInfo.fingerprint);
             };
 
             const docMetaProvider = AsyncProviders.memoize(async () => {
+
+                if (mutationType === 'deleted') {
+                    throw new Error("Unable to read data when mutationType is 'deleted'");
+                }
+
                 const data = await dataProvider();
-                const docMetaID = this.computeDocMetaID(this.getUserID(), docInfo.fingerprint);
+                const docMetaID = FirebaseDatastore.computeDocMetaID(docInfo.fingerprint);
                 Preconditions.assertPresent(data, `No data for docMeta with fingerprint: ${docInfo.fingerprint}, docMetaID: ${docMetaID}`);
-                return DocMetas.deserialize(data!);
+                return DocMetas.deserialize(data!, docInfo.fingerprint);
             });
 
             const docMetaMutation: FirebaseDocMetaMutation = {
@@ -765,15 +1083,17 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
 
         const handleDocChange = (docChange: firebase.firestore.DocumentChange) => {
             const docMetaMutation = docMetaMutationFromDocChange(docChange);
-            handleDocMetaMutation(docMetaMutation);
-        };
+            handleDocMetaMutation(docMetaMutation)
+                .catch(err => log.error(err));
 
+        };
 
         const handleDoc = (doc: firebase.firestore.QueryDocumentSnapshot) => {
             const docMetaMutation = docMetaMutationFromDoc(doc.data());
-            handleDocMetaMutation(docMetaMutation);
-        };
+            handleDocMetaMutation(docMetaMutation)
+                .catch(err => log.error(err));
 
+        };
 
         const consistency = snapshot.metadata.fromCache ? 'written' : 'committed';
 
@@ -792,7 +1112,9 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
         const progressTracker = new ProgressTracker(docChanges.length, 'firebase-snapshot');
 
         for (const docChange of docChanges) {
+
             handleDocChange(docChange);
+
         }
 
         // progressTracker = new ProgressTracker(snapshot.docs.length);
@@ -810,7 +1132,7 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
                 id: batchID,
                 terminated: true,
             }
-        }).catch(err => log.error("Unable to dispatch event listener"));
+        }).catch(err => log.error("Unable to dispatch event listener: ", err));
 
         log.debug("onSnapshot... done");
 
@@ -820,13 +1142,26 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
         return snapshot.metadata.fromCache ? 'written' : 'committed';
     }
 
-    private computeDocMetaID(uid: UserID, fingerprint: string) {
+    public static computeDocMetaID(fingerprint: string,
+                                   uid: UserID = FirebaseDatastore.getUserID()): FirebaseDocMetaID {
+
         return Hashcodes.createID(uid + ':' + fingerprint, 32);
+
     }
 
-    private getUserID(): UserID {
+    // You can allow users to sign in to your app using multiple authentication
+    // providers by linking auth provider credentials to an existing user account.
+    // Users are identifiable by the same Firebase user ID regardless of the
+    // authentication provider they used to sign in. For example, a user who signed
+    // in with a password can link a Google account and sign in with either method
+    // in the future. Or, an anonymous user can link a Facebook account and then,
+    // later, sign in with Facebook to continue using your app.
 
-        const auth = this.app!.auth();
+    public static getUserID(): UserID {
+
+        const app = firebase.app();
+
+        const auth = app.auth();
         Preconditions.assertPresent(auth, "Not authenticated");
 
         const user = auth.currentUser;
@@ -837,10 +1172,22 @@ export class FirebaseDatastore extends AbstractDatastore implements Datastore {
     }
 
     public addDocMetaSnapshotEventListener(docMetaSnapshotEventListener: DocMetaSnapshotEventListener): void {
-        throw new Error("Not implemented");
+        this.docMetaSnapshotEventDispatcher.addEventListener(docMetaSnapshotEventListener);
+    }
+
+    private preferredSource(): FirestoreSource {
+
+        if (AppRuntime.isBrowser()) {
+            return 'cache';
+        } else {
+            return 'default';
+        }
+
     }
 
 }
+
+type FirestoreSource = 'default' | 'server' | 'cache';
 
 /**
  * Holds a data object literal by value. This contains the high level
@@ -871,31 +1218,11 @@ export interface DocMetaHolder {
 
 }
 
-
-export enum Visibility {
-
-    /**
-     * Only visible for the user.
-     */
-    PRIVATE = 'private', /* or 0 */
-
-    /**
-     * Only to users that
-     */
-    FOLLOWING = 'following', /* or 1 */
-
-    /**
-     * To anyone on the service.
-     */
-    PUBLIC = 'public' /* or 2 */
-
-}
-
 export enum DatastoreCollection {
 
     DOC_INFO = "doc_info",
 
-    DOC_META = "doc_meta"
+    DOC_META = "doc_meta",
 
 }
 
@@ -925,7 +1252,6 @@ interface FirebaseDocMetaMutation extends DocMetaMutation {
 /**
  * Convert a Firestore DocumentChangeType to a DocMutationType.  We prefer the
  * CRUD (create update delete) naming.
- * @param docChangeType
  */
 function toMutationType(docChangeType: firebase.firestore.DocumentChangeType): MutationType {
 
@@ -952,4 +1278,115 @@ interface StoragePath {
 interface StorageSettings {
     readonly cacheControl: string;
     readonly contentType: string;
+}
+
+/**
+ * A specific type of document ID derived from the fingerprint and only
+ * available within Firebase.
+ */
+export type FirebaseDocMetaID = string;
+
+export class DownloadURLs {
+
+    /**
+     * Use the old getDownloadURL method which is not fast nor reliable.
+     */
+    private static USE_STORAGE_REF = false;
+
+    public static async computeDownloadURL(backend: Backend,
+                                           ref: FileRef,
+                                           storagePath: StoragePath,
+                                           storageRef: firebase.storage.Reference,
+                                           opts: GetFileOpts): Promise<string | undefined> {
+
+        if (this.USE_STORAGE_REF) {
+            return this.computeDownloadURLWithStorageRef(storageRef);
+        } else {
+            return this.computeDownloadURLDirectly(backend, ref, storagePath, opts);
+        }
+
+    }
+
+    private static async computeDownloadURLWithStorageRef(storageRef: firebase.storage.Reference): Promise<string | undefined> {
+
+        try {
+
+            return await storageRef.getDownloadURL();
+
+        } catch (e) {
+
+            if (e.code === "storage/object-not-found") {
+                return undefined;
+            }
+
+            // some other type of exception ias occurred
+            throw e;
+
+        }
+
+    }
+
+    private static async computeDownloadURLDirectly(backend: Backend,
+                                                    ref: FileRef,
+                                                    storagePath: StoragePath,
+                                                    opts: GetFileOpts): Promise<string | undefined> {
+
+        /**
+         * Compute the storage path including the flip over whether we're
+         * going to be public without any type of path conversion depending
+         * on whether it's public or not.  Public URLs have a 1:1 mapping
+         * where everything else might be in a different bucket or path
+         * depending the storage computation function.
+         */
+        const toPath = (): string => {
+
+            if (backend === Backend.PUBLIC) {
+                // there is no blinding of the data path with the users
+                // user ID or other key.
+                return `${backend}/${ref.name}`;
+            } else {
+                return storagePath.path;
+            }
+
+        };
+
+        const toURL = (): string => {
+
+            const path = toPath();
+
+            return `https://storage.googleapis.com/polar-32b0f.appspot.com/${path}`;
+
+        };
+
+        const url = toURL();
+
+        if (opts.noExistenceCheck) {
+
+            // This is pretty darn slow when using HEAD but with GET and a range
+            // query the performance isn't too bad.  Performing the HEAD directly
+            // is really poor with 300-7500ms latencies.  There are some major
+            // outliers when performing HEAD.
+            //
+            // Using GET and range of 0-0 is actually consistently about 200ms
+            // which is pretty reasonable but we stills should have the option
+            // to skip the exists check to just compute the URL.
+            //
+            // Doing an exists() with the Cloud SDK is about 250ms too.
+
+            return url;
+
+        } else {
+            const exists = await URLs.existsWithGETUsingRange(url);
+
+            return exists ? url : undefined;
+
+        }
+
+    }
+}
+
+interface GetDocMetaOpts {
+
+    readonly preferredSource?: FirestoreSource;
+
 }

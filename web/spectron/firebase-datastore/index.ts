@@ -5,8 +5,6 @@ import {Webserver} from '../../js/backend/webserver/Webserver';
 import {FileRegistry} from '../../js/backend/webserver/FileRegistry';
 import {SpectronBrowserWindowOptions} from '../../js/test/SpectronBrowserWindowOptions';
 import {PolarDataDir} from '../../js/test/PolarDataDir';
-import {FilePaths} from '../../js/util/FilePaths';
-import process from "process";
 import {AppPath} from '../../js/electron/app_path/AppPath';
 
 
@@ -48,7 +46,7 @@ SpectronMain2.create(options).run(async state => {
     // state.window.loadFile(path);
 
     const url = `http://localhost:8005/content.html`;
-    state.window.loadURL(url);
+    await state.window.loadURL(url);
 
 });
 

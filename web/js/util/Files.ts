@@ -4,15 +4,98 @@ import {Logger} from '../logger/Logger';
 import ErrnoException = NodeJS.ErrnoException;
 import {isPresent, Preconditions} from "../Preconditions";
 import {FilePaths} from "./FilePaths";
+import {Providers} from "./Providers";
+import {DurationStr, TimeDurations} from './TimeDurations';
+
+const ENABLE_ATOMIC_WRITES = true;
 
 const log = Logger.create();
+
+// noinspection TsLint
+class Promised {
+
+    public readFileAsync = promisify(fs.readFile);
+    public writeFileAsync = promisify(fs.writeFile);
+    public rename = promisify(fs.rename);
+    public mkdirAsync = promisify(fs.mkdir);
+    public accessAsync = promisify(fs.access);
+    public statAsync = promisify(fs.stat);
+    public unlinkAsync = promisify(fs.unlink);
+    public rmdirAsync = promisify(fs.rmdir);
+    public readdirAsync = promisify(fs.readdir);
+    public realpathAsync = promisify(fs.realpath);
+    public copyFileAsync = promisify(fs.copyFile);
+    public appendFileAsync = promisify(fs.appendFile);
+    public openAsync = promisify(fs.open);
+    public closeAsync = promisify(fs.close);
+    public fdatasyncAsync = promisify(fs.fdatasync);
+    public fsyncAsync = promisify(fs.fsync);
+    public linkAsync = promisify(fs.link);
+
+}
 
 export class Files {
 
     /**
+     * Go through the given directory path recursively call the callback
+     * function for each file.
+     *
+     * @param aborter If the aborder returns true we abort recursively following
+     *                directories.
+     */
+    public static async recursively(path: string,
+                                    listener: (path: string, stat: fs.Stats) => Promise<void>,
+                                    aborter: Aborter = new Aborter(Providers.of(false))) {
+
+        aborter.verify();
+
+        if (! await this.existsAsync(path)) {
+            throw new Error("Path does not exist: " + path);
+        }
+
+        // make sure we're given a directory and not a symlink, character
+        // device, etc.
+        Preconditions.assertEqual('directory',
+                                  await Files.fileType(path),
+                                  'Path had invalid type: ' + path);
+
+        aborter.verify();
+
+        const dirEntries = await this.readdirAsync(path);
+
+        for (const dirEntry of dirEntries) {
+
+            aborter.verify();
+
+            const dirEntryPath = FilePaths.join(path, dirEntry);
+
+            const dirEntryStat = await this.statAsync(dirEntryPath);
+
+            aborter.verify();
+
+            if (dirEntryStat.isDirectory()) {
+
+                // since the aborter is passed this will throw and exception if
+                // it aborts
+                await this.recursively(dirEntryPath, listener, aborter);
+
+            } else if (dirEntryStat.isFile()) {
+
+                await listener(dirEntryPath, dirEntryStat);
+
+            } else {
+                throw new Error(`Unable to handle dir entry: ${dirEntryPath}`);
+            }
+
+        }
+
+    }
+
+    /**
      * Create a recursive directory snapshot of files using hard links.
      *
-     * @param filter Accept any files that pass the filter predicate (return true).
+     * @param filter Accept any files that pass the filter predicate (return
+     *     true).
      *
      */
     public static async createDirectorySnapshot(path: string,
@@ -262,11 +345,15 @@ export class Files {
      *
      */
     public static async readFileAsync(path: PathLike | number): Promise<Buffer> {
-        return this.withProperException(() => this.Promised.readFileAsync(path));
+        return this.withProperException(() => this.promised.readFileAsync(path));
     }
 
     public static createReadStream(path: PathLike, options?: CreateReadStreamOptions): fs.ReadStream {
         return fs.createReadStream(path, options);
+    }
+
+    public static createWriteStream(path: PathLike, options?: CreateWriteStreamOptions): fs.WriteStream {
+        return fs.createWriteStream(path, options);
     }
 
     // https://nodejs.org/api/fs.html#fs_fs_writefile_file_data_options_callback
@@ -291,67 +378,157 @@ export class Files {
      */
     public static async writeFileAsync(path: string,
                                        data: FileHandle | NodeJS.ReadableStream | Buffer | string,
-                                       options?: WriteFileAsyncOptions | string | undefined | null) {
+                                       options: WriteFileAsyncOptions = {}) {
 
+        // copy of the original path when we are doing atomic writes.
+        const targetPath: string = path;
+
+        let failed: boolean = false;
+
+        const atomic = ENABLE_ATOMIC_WRITES && options.atomic;
+
+        if (atomic) {
+
+            // create a unique path name for the tmp file including a suffix
+            // which prevents races too so that only one atomic write wins if
+            // multiple are attempted.  This can happen now with streams.
+            const suffix = Math.floor(Math.random() * 999999);
+
+            const dirname = FilePaths.dirname(path);
+            const basename = FilePaths.basename(path);
+
+            // TODO: if we can do a rename with a file descriptor we can open it
+            // delete it, then start writing to just the FD so that when the
+            // process exits the file is removed but node doesn't support this
+            // because the paths are file paths not FDs.
+
+            path = FilePaths.join(dirname, "." + basename + "-" + suffix);
+
+        }
+
+        try {
+
+            await this._writeFileAsync(path, data, options);
+
+        } catch (e) {
+
+            failed = true;
+            throw e;
+
+        } finally {
+
+            if (atomic && ! failed) {
+                await Files.renameAsync(path, targetPath);
+            }
+
+            // TODO: what if the rename fails, we need to remove the tmp file
+
+        }
+
+    }
+
+    /**
+     * Write a file async (directly) without any atomic handling.
+     */
+    private static async _writeFileAsync(path: string,
+                                         data: FileHandle | NodeJS.ReadableStream | Buffer | string,
+                                         options: WriteFileAsyncOptions = {}) {
 
         if (data instanceof Buffer || typeof data === 'string') {
 
-            return this.withProperException(() => this.Promised.writeFileAsync(path, data, options));
+            return this.withProperException(() => this.promised.writeFileAsync(path, data, options));
 
-        } else if ( FileHandles.isFileHandle(data) ) {
+        } else if (FileHandles.isFileHandle(data)) {
+
+            const existing = options.existing ? options.existing : 'copy';
 
             const fileRef = <FileHandle> data;
+
+            if (existing === 'link') {
+
+                // try to create a hard link first, then revert to a regular
+                // file copy if necessary.
+
+                if (await Files.existsAsync(path)) {
+                    // in the link mode an existing files has to be removed
+                    // before it can be linked.  Normally writeFileAsync would
+                    // overwrite existing files.
+                    await Files.unlinkAsync(path);
+                }
+
+                const src = fileRef.path;
+                const dest = path;
+
+                try {
+                    await Files.linkAsync(src, dest);
+                    return;
+                } catch (e) {
+                    log.warn(`Unable to create hard link from ${src} to ${dest} (reverting to copy)`);
+                }
+
+            }
+
             Files.createReadStream(fileRef.path).pipe(fs.createWriteStream(path));
 
         } else {
 
             const readableStream = <NodeJS.ReadableStream> data;
+
+            if (! readableStream.pipe) {
+                log.error("Given invalid data to copy: ", data);
+                throw new Error("Given invalid data to copy.  Not supported type.");
+            }
+
             readableStream.pipe(fs.createWriteStream(path));
         }
 
     }
 
+    public static async renameAsync(oldPath: string, newPath: string) {
+        return this.withProperException(() => this.promised.rename(oldPath, newPath));
+    }
+
     public static async statAsync(path: string): Promise<Stats> {
-        return this.withProperException(() => this.Promised.statAsync(path));
+        return this.withProperException(() => this.promised.statAsync(path));
     }
 
     public static async mkdirAsync(path: string, mode?: number | string | undefined | null): Promise<void> {
-        return this.withProperException(() => this.Promised.mkdirAsync(path, mode));
+        return this.withProperException(() => this.promised.mkdirAsync(path, mode));
     }
 
     public static async accessAsync(path: PathLike, mode: number | undefined): Promise<void> {
-        return this.withProperException(() => this.Promised.accessAsync(path, mode));
+        return this.withProperException(() => this.promised.accessAsync(path, mode));
     }
 
     public static async unlinkAsync(path: PathLike): Promise<void> {
-        return this.withProperException(() => this.Promised.unlinkAsync(path));
+        return this.withProperException(() => this.promised.unlinkAsync(path));
     }
 
     public static async rmdirAsync(path: PathLike): Promise<void> {
-        return this.withProperException(() => this.Promised.rmdirAsync(path));
+        return this.withProperException(() => this.promised.rmdirAsync(path));
     }
 
     public static async linkAsync(existingPath: PathLike, newPath: PathLike): Promise<void> {
-        return this.withProperException(() => this.Promised.linkAsync(existingPath, newPath));
+        return this.withProperException(() => this.promised.linkAsync(existingPath, newPath));
     }
 
     public static async readdirAsync(path: string): Promise<string[]> {
-        return this.withProperException(() => this.Promised.readdirAsync(path));
+        return this.withProperException(() => this.promised.readdirAsync(path));
     }
 
     public static async realpathAsync(path: string): Promise<string> {
-        return this.withProperException(() => this.Promised.realpathAsync(path));
+        return this.withProperException(() => this.promised.realpathAsync(path));
     }
 
     public static async copyFileAsync(src: string, dest: string, flags?: number): Promise<void> {
-        return this.withProperException(() => this.Promised.copyFileAsync(src, dest, flags));
+        return this.withProperException(() => this.promised.copyFileAsync(src, dest, flags));
     }
 
     public static async appendFileAsync(path: string | Buffer | number,
                                         data: string | Buffer,
                                         options?: AppendFileOptions): Promise<void> {
 
-        return this.withProperException(() => this.Promised.appendFileAsync(path, data, options));
+        return this.withProperException(() => this.promised.appendFileAsync(path, data, options));
 
     }
 
@@ -363,7 +540,7 @@ export class Files {
                                   flags: string | number,
                                   mode?: number): Promise<number> {
 
-        return this.withProperException(() => this.Promised.openAsync(path, flags, mode));
+        return this.withProperException(() => this.promised.openAsync(path, flags, mode));
 
     }
 
@@ -371,15 +548,15 @@ export class Files {
      *
      */
     public static async closeAsync(fd: number): Promise<void> {
-        return this.withProperException(() => this.Promised.closeAsync(fd));
+        return this.withProperException(() => this.promised.closeAsync(fd));
     }
 
     public static async fdatasyncAsync(fd: number): Promise<void> {
-        return this.withProperException(() => this.Promised.fdatasyncAsync(fd));
+        return this.withProperException(() => this.promised.fdatasyncAsync(fd));
     }
 
     public static async fsyncAsync(fd: number): Promise<void> {
-        return this.withProperException(() => this.Promised.fsyncAsync(fd));
+        return this.withProperException(() => this.promised.fsyncAsync(fd));
     }
 
     private static async withProperException<T>(func: () => Promise<T>): Promise<T> {
@@ -414,26 +591,7 @@ export class Files {
     }
 
     // noinspection TsLint
-    private static readonly Promised = {
-
-        readFileAsync: promisify(fs.readFile),
-        writeFileAsync: promisify(fs.writeFile),
-        mkdirAsync: promisify(fs.mkdir),
-        accessAsync: promisify(fs.access),
-        statAsync: promisify(fs.stat),
-        unlinkAsync: promisify(fs.unlink),
-        rmdirAsync: promisify(fs.rmdir),
-        readdirAsync: promisify(fs.readdir),
-        realpathAsync: promisify(fs.realpath),
-        copyFileAsync: promisify(fs.copyFile),
-        appendFileAsync: promisify(fs.appendFile),
-        openAsync: promisify(fs.open),
-        closeAsync: promisify(fs.close),
-        fdatasyncAsync: promisify(fs.fdatasync),
-        fsyncAsync: promisify(fs.fsync),
-        linkAsync: promisify(fs.link),
-
-    };
+    private static readonly promised = fs.readFile ? new Promised() : null!;
 
 }
 
@@ -444,9 +602,25 @@ export interface CreateDirResult {
 }
 
 export interface WriteFileAsyncOptions {
-    encoding?: string | null;
-    mode?: number | string;
-    flag?: string;
+
+    readonly encoding?: string | null;
+
+    readonly mode?: number | string;
+
+    readonly flag?: string;
+
+    /**
+     * Strategy for how to handle existing files.  Copy is just a copy of the
+     * original file but link creates a hard link.
+     */
+    readonly existing?: 'link' | 'copy';
+
+    /**
+     * When true, we write atomically by creating a temp file, writing to the
+     * temp file, then doing a rename of the temp file to the target file.
+     */
+    readonly atomic?: boolean;
+
 }
 
 export interface AppendFileOptions {
@@ -472,6 +646,15 @@ export type CreateReadStreamOptions = string | {
     start?: number;
     end?: number;
     highWaterMark?: number;
+};
+
+export type CreateWriteStreamOptions = string | {
+    flags?: string;
+    encoding?: string;
+    fd?: number;
+    mode?: number;
+    autoClose?: boolean;
+    start?: number;
 };
 
 /**
@@ -510,3 +693,67 @@ export type DirectorySnapshotPredicate = (path: string, targetPath: string) => b
 
 export const ACCEPT_ALL: DirectorySnapshotPredicate = () => true;
 
+/**
+ * Return true if we aborted due to using an aborter.
+ */
+export interface RecursionResult {
+    readonly aborted: boolean;
+}
+
+// I don't care of this class name is politically incorrect.  Let's be adults
+// here
+export type AbortionProvider = () => boolean;
+
+export class Aborter {
+
+    private aborted: boolean = false;
+
+    constructor(private provider: AbortionProvider) {
+    }
+
+    protected hasAborted(): boolean {
+        return this.provider();
+    }
+
+    /**
+     * Verify that we haven't yet aborted
+     */
+    public verify() {
+
+        if (this.hasAborted()) {
+            this.aborted = true;
+            throw new AbortionError("Operation terminated: ");
+        }
+
+    }
+
+    /**
+     * Return true if a caller actually aborted during operation in the past.
+     * Does not reflect the current state.
+     */
+    public wasMarkedAborted(): boolean {
+        return this.aborted;
+    }
+
+}
+
+
+export class Aborters {
+
+    /**
+     * Return a function that aborts after a given time.
+     */
+    public static maxTime(duration: DurationStr = "1m"): Aborter {
+
+        const durationMS = TimeDurations.toMillis(duration);
+        const started = Date.now();
+
+        return new Aborter(() => (Date.now() - started) > durationMS);
+
+    }
+
+}
+
+export class AbortionError extends Error {
+
+}

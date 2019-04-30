@@ -1,3 +1,6 @@
+import {DurationStr, TimeDurations} from "./TimeDurations";
+import {Latch} from './Latch';
+
 /**
  * A Provider is just a function that returns a given type.
  */
@@ -19,6 +22,28 @@ export class Providers {
         return () => provider.get();
     }
 
+    public static toInterface<T>(provider: Provider<T> | T): IProvider<T> {
+
+        const toFunction = (): Provider<T> => {
+
+            if (typeof provider !== 'function') {
+                return () => provider;
+            }
+
+            return <Provider<T>> provider;
+
+        };
+
+        const func = toFunction();
+
+        return {
+            get() {
+                return func();
+            }
+        };
+
+    }
+
     /**
      * Return a provider using the given value.
      */
@@ -27,7 +52,8 @@ export class Providers {
     }
 
     /**
-     * Memoize the given function to improve its performance or make it optional.
+     * Memoize the given function to improve its performance or make it
+     * optional.
      */
     public static memoize<T>(provider: Provider<T>): Provider<T> {
 
@@ -67,6 +93,52 @@ export class Providers {
 
     }
 
+    /**
+     * Cache the given function to avoid continually fetching the underlying
+     * value.
+     */
+    public static cached<T>(duration: DurationStr,
+                            provider: Provider<T>): Provider<T> {
+
+        const durationMS = TimeDurations.toMillis(duration);
+
+        let lastUpdated: number = 0;
+
+        // an error that the provider threw
+        let err: Error | undefined;
+
+        // the value that the provider returned.
+        let value: T | undefined;
+
+        return () => {
+
+            if (Date.now() - lastUpdated < durationMS) {
+
+                if (err) {
+                    throw err;
+                }
+
+                return value!;
+
+            }
+
+            try {
+
+                value = provider();
+                return value!;
+
+            } catch (e) {
+                err = e;
+                throw e;
+            } finally {
+                lastUpdated = Date.now();
+            }
+
+        };
+
+    }
+
+
 }
 
 export type AsyncProvider<T> = () => Promise<T>;
@@ -77,43 +149,34 @@ export class AsyncProviders {
         return () => Promise.resolve(value);
     }
 
-    /**
-     */
     public static memoize<T>(provider: AsyncProvider<T>): AsyncProvider<T> {
 
-        let memoized: boolean = false;
+        const latch: Latch<T> = new Latch();
 
-        // an error that the provider threw
-        let err: Error | undefined;
-
-        // the value that the provider returned.
-        let memo: T | undefined;
+        // true when the first provider is executing.
+        let executing: boolean = false;
 
         return async () => {
 
-            if (memoized) {
-
-                if (err) {
-                    throw err;
-                }
-
-                return memo!;
-
+            if (executing) {
+                // if we're executing we just return the latch and it will block
+                // until the first caller returns.
+                return latch.get();
             }
 
             try {
 
-                memo = await provider();
-                return memo!;
+                executing = true;
+                latch.resolve(await provider());
 
             } catch (e) {
-                err = e;
-                throw e;
-            } finally {
-                memoized = true;
+                latch.reject(e);
             }
+
+            return latch.get();
 
         };
 
     }
+
 }

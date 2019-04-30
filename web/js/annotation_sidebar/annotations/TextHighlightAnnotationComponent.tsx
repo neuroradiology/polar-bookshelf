@@ -4,7 +4,7 @@ import {DocAnnotation} from '../DocAnnotation';
 import {Optional} from '../../util/ts/Optional';
 import {AnnotationControlBar} from '../AnnotationControlBar';
 import {ChildAnnotationSection} from '../child_annotations/ChildAnnotationSection';
-import {IStyleMap} from '../../react/IStyleMap';
+import {Doc} from '../../metadata/Doc';
 
 
 /**
@@ -40,16 +40,20 @@ export class TextHighlightAnnotationComponent extends React.Component<IProps, IS
 
                     <blockquote className="p-1">
 
-                        <span dangerouslySetInnerHTML={{__html: html}}>
+                        <span className="text-sm"
+                              dangerouslySetInnerHTML={{__html: html}}>
 
                         </span>
 
                     </blockquote>
 
-                    <AnnotationControlBar annotation={annotation}/>
+                    <AnnotationControlBar doc={this.props.doc}
+                                          annotation={annotation}/>
 
                     <div className="comments">
-                        <ChildAnnotationSection children={annotation.children}/>
+                        <ChildAnnotationSection doc={this.props.doc}
+                                                parent={annotation}
+                                                children={annotation.children}/>
                     </div>
 
                 </div>
@@ -60,7 +64,11 @@ export class TextHighlightAnnotationComponent extends React.Component<IProps, IS
 
 }
 interface IProps {
-    annotation: DocAnnotation;
+
+    readonly doc: Doc;
+
+    readonly annotation: DocAnnotation;
+
 }
 
 interface IState {

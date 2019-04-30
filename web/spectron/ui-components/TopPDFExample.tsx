@@ -1,5 +1,4 @@
 import * as React from 'react';
-import {CommentComponent} from '../../js/annotation_sidebar/child_annotations/CommentComponent';
 import {FilePaths} from '../../js/util/FilePaths';
 
 class Styles {
@@ -19,12 +18,14 @@ class Styles {
         fontWeight: 'bold',
         marginRight: '5px',
         fontSize: '22px',
+        textAlign: 'right'
     };
 
     public static link: React.CSSProperties = {
         display: 'table-cell',
         fontSize: '22px',
-        textAlign: 'left'
+        textAlign: 'left',
+        paddingLeft: '5px'
     };
 
 }

@@ -9,6 +9,10 @@ import {ISODateTimeString, ISODateString} from './ISODateTimeStrings';
 import {Tag} from '../tags/Tag';
 import {Hashcode} from './Hashcode';
 import {UUID} from './UUID';
+import {ReadingOverview} from './ReadingOverview';
+import {Visibility} from '../datastore/Datastore';
+import {Attachment} from './Attachment';
+import {Backend} from '../datastore/Backend';
 
 export class DocInfo extends SerializedObject implements IDocInfo {
 
@@ -25,6 +29,7 @@ export class DocInfo extends SerializedObject implements IDocInfo {
     public properties: {[id: string]: string} = {};
     public archived: boolean = false;
     public flagged: boolean = false;
+    public backend?: Backend;
     public filename?: string;
     public added?: ISODateTimeString;
     public tags?: {[id: string]: Tag} = {};
@@ -41,6 +46,10 @@ export class DocInfo extends SerializedObject implements IDocInfo {
     public storedResources?: Set<StoredResource>;
     public mutating?: boolean;
     public published?: ISODateString | ISODateTimeString;
+    public doi?: string;
+    public readingPerDay?: ReadingOverview;
+    public visibility?: Visibility;
+    public attachments: {[id: string]: Attachment} = {};
 
     constructor(val: IDocInfo) {
 
@@ -56,7 +65,7 @@ export class DocInfo extends SerializedObject implements IDocInfo {
     public setup() {
 
         this.progress = Preconditions.defaultValue(this.progress, 0);
-        this.pagemarkType = Preconditions.defaultValue(this.pagemarkType, PagemarkType.SINGLE_COLUMN);
+        this.pagemarkType = this.pagemarkType || PagemarkType.SINGLE_COLUMN;
         this.properties = Preconditions.defaultValue(this.properties, {});
 
     }
@@ -147,6 +156,12 @@ export interface IDocInfo {
     flagged: boolean;
 
     /**
+     * The backend of the doc. We assume STASH by default but it could be PUBLIC
+     * for example docs.
+     */
+    backend?: Backend;
+
+    /**
      * The filename of this doc in the .stash directory.
      */
     filename?: string;
@@ -226,6 +241,18 @@ export interface IDocInfo {
      */
     published?: ISODateString | ISODateTimeString;
 
+    doi?: string;
+
+    readingPerDay?: ReadingOverview;
+
+    /**
+     * The visibility of this document (private or public).  The default is
+     * private.
+     */
+    visibility?: Visibility;
+
+    attachments: {[id: string]: Attachment};
+
 }
 
 /**
@@ -256,3 +283,25 @@ export type ShareStrategy = 'saved' | 'navigated';
  *
  */
 export type StoredResource = 'link' | 'doc' | 'styles' | 'images' | 'fonts';
+
+export interface Storage {
+
+    /**
+     * The number of bytes used by the doc (pdf or phz file).
+     */
+    readonly docFile: DiskUsage;
+
+    /**
+     * The number of bytes used to store this file based on DocMeta.
+     */
+    readonly docMeta?: DiskUsage;
+}
+
+/**
+ * Represents the disk usage of the given resources.
+ */
+export interface DiskUsage {
+    readonly bytesUsed: number;
+}
+
+export type DocInfoLike = DocInfo | IDocInfo;

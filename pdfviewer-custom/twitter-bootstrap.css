@@ -12,3 +12,65 @@
 .twitter-bootstrap-enabled *::after {
     box-sizing: border-box;
 }
+
+button.dropdown-item:hover {
+    background-color: #D8D8D8;
+    background-image: none;
+}
+
+.confirm-prompt {
+
+    min-width: 550px;
+    width: 550px;
+
+}
+
+.popover {
+    /* the default max width is too small */
+    max-width: 500px !important;
+}
+
+/* custom CSS for mobile devices */
+@media only screen and (max-device-width: 480px) {
+
+    .d-none-mobile {
+        display: none;
+    }
+
+}
+
+@media only screen and (min-device-width: 480px) {
+
+    .d-none-desktop {
+        display: none;
+    }
+
+}
+
+
+.twitter-bootstrap-content *,
+.twitter-bootstrap-content {
+    font-size: 16px;
+    /*font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";;*/
+}
+
+.text-xs *,
+.text-xs {
+    font-size: 12px;
+}
+
+.text-sm {
+    font-size: 14px;
+}
+
+.text-md {
+    font-size: 16px;
+}
+
+.text-lg {
+    font-size: 18px;
+}
+
+.text-xl {
+    font-size: 20px;
+}

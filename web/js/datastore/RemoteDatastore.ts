@@ -1,16 +1,16 @@
-import {Datastore, DocMetaSnapshotEvent, FileMeta, FileRef, InitResult, DocMetaSnapshotEventListener, SnapshotResult, ErrorListener, DatastoreID} from './Datastore';
-import {Directories} from './Directories';
-import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
+import {Datastore, DatastoreID, DocMetaSnapshotEvent, DocMetaSnapshotEventListener, ErrorListener, InitResult, SnapshotResult} from './Datastore';
 import {DeleteResult} from './Datastore';
-import {Preconditions} from '../Preconditions';
-import {Backend} from './Backend';
-import {DatastoreFile} from './DatastoreFile';
-import {Optional} from '../util/ts/Optional';
-import {IDocInfo} from '../metadata/DocInfo';
-import {DatastoreMutation} from './DatastoreMutation';
 import {Datastores} from './Datastores';
 import {DelegatedDatastore} from './DelegatedDatastore';
 import {IEventDispatcher, SimpleReactor} from '../reactor/SimpleReactor';
+import {Logger} from '../logger/Logger';
+import {DocMetaFileRef} from './DocMetaRef';
+import {DatastoreMutation} from './DatastoreMutation';
+import {DefaultDatastoreMutation} from './DatastoreMutation';
+import {IDocInfo} from '../metadata/DocInfo';
+import {WriteOpts} from './Datastore';
+
+const log = Logger.create();
 
 /**
  * A remote datastore bug one that has a native implementation of snapshot
@@ -22,9 +22,9 @@ export class RemoteDatastore extends DelegatedDatastore {
 
     public readonly id: DatastoreID;
 
-    constructor(delegate: Datastore) {
-        super(delegate);
-        this.id = 'remote:' + delegate.id;
+    constructor(datastore: Datastore) {
+        super(datastore);
+        this.id = 'remote:' + datastore.id;
     }
 
     public async snapshot(listener: DocMetaSnapshotEventListener): Promise<SnapshotResult> {
@@ -36,12 +36,51 @@ export class RemoteDatastore extends DelegatedDatastore {
      */
     public async init(errorListener?: ErrorListener): Promise<InitResult> {
 
+        await super.init();
+
         if (this.docMetaSnapshotEventDispatcher.size() > 0) {
+
             // perform a snapshot if a listener was attached...
-            this.snapshot(async event => this.docMetaSnapshotEventDispatcher.dispatchEvent(event));
+            this.snapshot(async event => this.docMetaSnapshotEventDispatcher.dispatchEvent(event))
+                .catch(err => log.error(err));
+
         }
 
         return {};
+    }
+
+    /**
+     * Delegate handle the mutations in the renderer process.
+     */
+    public write(fingerprint: string,
+                 data: string,
+                 docInfo: IDocInfo,
+                 opts: WriteOpts = {}): Promise<void> {
+
+        const datastoreMutation = opts.datastoreMutation || new DefaultDatastoreMutation();
+
+        // create a new opts without a datastoreMutation because we don't trust
+        // promises across process bounds
+        opts = {... opts, datastoreMutation: undefined};
+
+        const result = this.delegate.write(fingerprint, data, docInfo, opts);
+        this.datastoreMutations.handle(result, datastoreMutation, () => true);
+
+        return result;
+
+    }
+
+    /**
+     * Delegate handle the mutations in the renderer process.
+     */
+    public delete(docMetaFileRef: DocMetaFileRef,
+                  datastoreMutation: DatastoreMutation<boolean> = new DefaultDatastoreMutation()): Promise<Readonly<DeleteResult>> {
+
+        const result = this.delegate.delete(docMetaFileRef);
+        this.datastoreMutations.handle(result, datastoreMutation, () => true);
+
+        return result;
+
     }
 
     /**
@@ -54,3 +93,4 @@ export class RemoteDatastore extends DelegatedDatastore {
     }
 
 }
+

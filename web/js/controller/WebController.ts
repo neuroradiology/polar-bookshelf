@@ -7,11 +7,8 @@ import {Logger} from '../logger/Logger';
 import {Viewer} from '../viewer/Viewer';
 import {DocTitleController} from './DocTitleController';
 import {PagemarkController} from '../pagemarks/controller/PagemarkController';
-import {AnkiSyncController} from './AnkiSyncController';
 import {Controller} from './Controller';
 import {TextHighlightController} from '../highlights/text/controller/TextHighlightController';
-import {FlashcardsController} from '../flashcards/controller/FlashcardsController';
-import {AnnotationsController} from '../annotations/controller/AnnotationsController';
 import {DocFormat} from '../docformat/DocFormat';
 import {AreaHighlightController} from '../highlights/area/controller/AreaHighlightController';
 import {PagemarkCoverageEventListener} from '../pagemarks/controller/PagemarkCoverageEventListener';
@@ -44,7 +41,6 @@ export class WebController extends Controller {
 
         new PagemarkController(model).start();
         new DocTitleController(this.model).start();
-        new AnkiSyncController(this.model).start();
 
     }
 
@@ -54,6 +50,10 @@ export class WebController extends Controller {
         await this.listenForKeyBindings();
 
         // new MouseTracer(document).start();
+
+        if (this.docFormat.name === 'pdf') {
+            this.detectDocumentLoaded('start');
+        }
 
     }
 
@@ -132,28 +132,30 @@ export class WebController extends Controller {
 
         const container = notNull(document.getElementById('viewerContainer'));
 
-        container.addEventListener('pagesinit', this.detectDocumentLoadedEventListener.bind(this));
-        container.addEventListener('updateviewarea', this.detectDocumentLoadedEventListener.bind(this));
+        for (const eventName of ['pagesinit', 'updateviewarea']) {
+            container.addEventListener(eventName, (event) => this.detectDocumentLoaded(eventName));
+
+        }
 
         // run manually the first time in case we get lucky of we're running HTML
         // this.detectDocumentLoadedEventListener();
 
     }
 
-    public detectDocumentLoadedEventListener(event: Event) {
+    private detectDocumentLoaded(eventName: string) {
 
-        // FIXME: technically we're detecting a new document LOADING not LOADED...
+        // TODO: technically we're detecting a new document LOADING not LOADED...
         // fix this so that I get a distinct onDocumentLoaded event too...
 
         const currentDocFingerprint = this.docFormat.currentDocFingerprint();
 
         if (currentDocFingerprint !== undefined && currentDocFingerprint !== this.docFingerprint) {
 
-            log.info("controller: New document loaded!");
+            log.info("controller: New document loaded: " + eventName);
 
             const newDocumentFingerprint = currentDocFingerprint;
 
-            const currentDocState = this.docFormat.currentState(event);
+            const currentDocState = this.docFormat.currentState();
 
             this.onNewDocumentFingerprint(newDocumentFingerprint, currentDocState.nrPages, currentDocState.currentPageNumber);
 
@@ -172,7 +174,6 @@ export class WebController extends Controller {
 
     }
 
-    // FIXME: remake this binding to CreatePagemarkEntirePage
     public async keyBindingPagemarkEntirePage(event: KeyboardEvent) {
 
         log.info("Marking entire page as read.");
@@ -230,6 +231,7 @@ export class WebController extends Controller {
             }
 
         } else {
+            // noop
         }
 
     }
@@ -244,7 +246,7 @@ export class WebController extends Controller {
 
         new PagemarkCoverageEventListener(this, this.model).start();
 
-        new FlashcardsController(this.model).start();
+        // new FlashcardsController(this.model).start();
 
         // await new AnnotationsController().start();
 

@@ -79,6 +79,18 @@ export class Optional<T> {
         return this.value;
     }
 
+    /**
+     * Get the value or return null if it is absent.
+     */
+    public getOrNull(): T | null {
+
+        if (this.value === null) {
+            return null;
+        }
+
+        return this.value!;
+    }
+
     public isPresent(): boolean {
         return this.value !== undefined && this.value !== null;
     }
@@ -185,6 +197,10 @@ export class Optional<T> {
     public static present(obj?: any) {
         return obj !== undefined && obj !== null;
     }
+
+}
+
+export class Defaults {
 
 }
 

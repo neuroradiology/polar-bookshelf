@@ -1,14 +1,11 @@
-import {AnnotationBar, AnnotationBarCallbacks, AnnotationBarTriggerEvent} from './AnnotationBar';
+import {AnnotationBarCallbacks} from './AnnotationBar';
 import * as React from 'react';
-import {ControlledPopups} from '../popup/ControlledPopups';
 import {ActiveSelectionEvent, ActiveSelections} from '../popup/ActiveSelections';
-import {IEventDispatcher, SimpleReactor} from '../../reactor/SimpleReactor';
 import {ControlledPopupProps} from '../popup/ControlledPopup';
 import {ControlledAnnotationBar} from './ControlledAnnotationBar';
 import {Elements} from '../../util/Elements';
 import {Logger} from '../../logger/Logger';
 import * as ReactDOM from 'react-dom';
-import DocRepoApp from '../../../../apps/repository/js/doc_repo/DocRepoApp';
 import {Point} from '../../Point';
 import {Optional} from '../../util/ts/Optional';
 import {Points} from '../../Points';
@@ -129,6 +126,12 @@ export class ControlledAnnotationBars {
             y: -50
         };
 
+        // TODO use the mouseDirection on the activeSelectionEvent and place
+        // with top/bottom
+
+        // TODO: we have to compute the position above or below based on the
+        // direction of the mouse movement.
+
         const position = this.computePosition(pageElement, point, offset);
 
         const annotationBar = document.createElement('div');
@@ -136,7 +139,7 @@ export class ControlledAnnotationBars {
         annotationBar.addEventListener('mouseup', (event) => event.stopPropagation());
         annotationBar.addEventListener('mousedown', (event) => event.stopPropagation());
 
-        const style = `position: absolute; top: ${position.y}px; left: ${position.x}px; z-index: 9999;`;
+        const style = `position: absolute; top: ${position.y}px; left: ${position.x}px; z-index: 10000;`;
         annotationBar.setAttribute('style', style);
 
         pageElement.insertBefore(annotationBar, pageElement.firstChild);

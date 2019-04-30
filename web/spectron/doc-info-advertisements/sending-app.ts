@@ -6,7 +6,6 @@ import {MemoryDatastore} from '../../js/datastore/MemoryDatastore';
 import {DefaultPersistenceLayer} from '../../js/datastore/DefaultPersistenceLayer';
 import {assertJSON} from '../../js/test/Assertions';
 import {TestingTime} from '../../js/test/TestingTime';
-import {Dictionaries} from '../../js/util/Dictionaries';
 import {canonicalize} from './testing';
 
 const log = Logger.create();
@@ -36,8 +35,13 @@ SpectronRenderer.run(async () => {
         "flagged": false,
         "nrPages": 1,
         "fingerprint": "0x0001",
-        "added": "2012-03-02T11:38:49.321Z"
-    };
+        "added": "2012-03-02T11:38:49.321Z",
+        "readingPerDay": {
+            "2012-03-02": 1
+        },
+        attachments: {}}
+
+    ;
 
     assertJSON(canonicalize(docMeta.docInfo), canonicalize(expected));
 

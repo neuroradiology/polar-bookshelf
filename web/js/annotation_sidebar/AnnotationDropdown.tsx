@@ -8,14 +8,18 @@ import {DocAnnotation} from './DocAnnotation';
 
 const log = Logger.create();
 
-const Styles: IStyleMap = {
+class Styles {
 
-    DropdownMenu: {
+    public static DropdownMenu: React.CSSProperties = {
         zIndex: 999,
-        fontSize: '14px'
-    },
+        fontSize: '16px'
+    };
 
-};
+    public static DropdownItem: React.CSSProperties = {
+        fontSize: '15px'
+    };
+
+}
 
 export class AnnotationDropdown extends React.Component<IProps, IState> {
 
@@ -48,9 +52,12 @@ export class AnnotationDropdown extends React.Component<IProps, IState> {
 
             <div className="text-right">
 
-                <Dropdown id={this.props.id} isOpen={this.state.open} toggle={this.toggle}>
+                <Dropdown id={this.props.id}
+                          isOpen={this.state.open}
+                          toggle={this.toggle}>
 
                     <DropdownToggle color="light"
+                                    disabled={this.props.disabled}
                                     className="doc-dropdown-button btn text-muted pl-1 pr-1"
                                     id={toggleID}>
 
@@ -60,21 +67,21 @@ export class AnnotationDropdown extends React.Component<IProps, IState> {
 
                     <DropdownMenu right>
 
-                        <DropdownItem onClick={() => this.onCreateComment()}>
+                        <DropdownItem style={Styles.DropdownItem} onClick={() => this.onCreateComment()}>
                             Create comment
                         </DropdownItem>
 
-                        <DropdownItem onClick={() => this.onCreateFlashcard()}>
+                        <DropdownItem style={Styles.DropdownItem} onClick={() => this.onCreateFlashcard()}>
                             Create flashcard
                         </DropdownItem>
 
-                        <DropdownItem onClick={() => this.onJumpToContext()}>
+                        <DropdownItem style={Styles.DropdownItem} onClick={() => this.onJumpToContext()}>
                             Jump to context
                         </DropdownItem>
 
                         <DropdownItem divider />
 
-                        <DropdownItem className="text-danger" onClick={() => this.onDeleteSelected()}>
+                        <DropdownItem style={Styles.DropdownItem} className="text-danger" onClick={() => this.onDeleteSelected()}>
                             Delete
                         </DropdownItem>
 
@@ -145,12 +152,13 @@ export class AnnotationDropdown extends React.Component<IProps, IState> {
 }
 
 interface IProps {
-    id: string;
-    annotation: DocAnnotation;
-    onDelete: (annotation: DocAnnotation) => void;
-    onJumpToContext: (annotation: DocAnnotation) => void;
-    onCreateComment: (annotation: DocAnnotation) => void;
-    onCreateFlashcard: (annotation: DocAnnotation) => void;
+    readonly id: string;
+    readonly annotation: DocAnnotation;
+    readonly onDelete: (annotation: DocAnnotation) => void;
+    readonly onJumpToContext: (annotation: DocAnnotation) => void;
+    readonly onCreateComment: (annotation: DocAnnotation) => void;
+    readonly onCreateFlashcard: (annotation: DocAnnotation) => void;
+    readonly disabled?: boolean;
 }
 
 interface IState {

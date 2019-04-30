@@ -1,4 +1,7 @@
 import {Datastore, DocMetaMutation, DocMetaSnapshotBatch, DocMetaSnapshotEventListener, SnapshotResult} from './Datastore';
+import {NetworkLayer} from './Datastore';
+import {FileRef} from './Datastore';
+import {BackendFileRef} from './Datastore';
 import {MemoryDatastore} from './MemoryDatastore';
 import {DiskDatastore} from './DiskDatastore';
 import {Logger} from '../logger/Logger';
@@ -14,6 +17,10 @@ import {DocInfo} from '../metadata/DocInfo';
 import deepEqual from 'deep-equal';
 import {Preconditions} from '../Preconditions';
 import {AsyncFunction, AsyncWorkQueue} from '../util/AsyncWorkQueue';
+import {Backend} from './Backend';
+import {Either} from '../util/Either';
+import {LeftEither} from '../util/Either';
+import {DocInfoLike} from '../metadata/DocInfo';
 
 const log = Logger.create();
 
@@ -34,12 +41,79 @@ export class Datastores {
 
     }
 
+    /**
+     * Get the main BackendFileRef (PHZ or PDF) for this file (either the
+     * PHZ or PDF file)
+     */
+    public static toBackendFileRef(either: LeftEither<DocMeta, DocInfoLike>): BackendFileRef | undefined {
+
+        if (! either) {
+            return undefined;
+        }
+
+        const docInfo =
+            Either.ofLeft(either)
+                  .convertLeftToRight(left => left.docInfo);
+
+        if (docInfo.filename) {
+
+            // return the existing doc meta information.
+
+            const backend = docInfo.backend || Backend.STASH;
+
+            const backendFileRef: BackendFileRef = {
+                name: docInfo.filename,
+                hashcode: docInfo.hashcode,
+                backend
+            };
+
+            return backendFileRef;
+
+        }
+
+        return undefined;
+
+    }
+
+    /**
+     * Get all FileRefs for this DocMeta including the main doc but also
+     * any image, audio, or video attachments.
+     */
+    public static toBackendFileRefs(either: LeftEither<DocMeta, DocInfoLike>): ReadonlyArray<BackendFileRef> {
+
+        const result: BackendFileRef[] = [];
+
+        const fileRef = this.toBackendFileRef(either);
+
+        const docInfo =
+            Either.ofLeft(either)
+                .convertLeftToRight(left => left.docInfo);
+
+        if (fileRef) {
+
+            const backend = docInfo.backend || Backend.STASH;
+
+            // this is the main FileRef of the file (PHZ or PDF)
+            result.push({backend, ...fileRef});
+
+        }
+
+        const attachments = docInfo.attachments || {};
+        const attachmentRefs = Object.values(attachments)
+            .map(current => current.data);
+
+        result.push(...attachmentRefs);
+
+        return result;
+
+    }
+
     public static async getDocMetas(datastore: Datastore,
                                     listener: DocMetaListener,
                                     docMetaRefs?: DocMetaRef[]) {
 
         if (!docMetaRefs) {
-            docMetaRefs = await datastore.getDocMetaFiles();
+            docMetaRefs = await datastore.getDocMetaRefs();
         }
 
         for (const docMetaRef of docMetaRefs) {
@@ -49,7 +123,7 @@ export class Datastores {
                 throw new Error("Could not find docMeta for fingerprint: " + docMetaRef.fingerprint);
             }
 
-            const docMeta = DocMetas.deserialize(docMetaData);
+            const docMeta = DocMetas.deserialize(docMetaData, docMetaRef.fingerprint);
             listener(docMeta);
         }
 
@@ -76,7 +150,7 @@ export class Datastores {
 
         }
 
-        const docMetaFiles = await datastore.getDocMetaFiles();
+        const docMetaFiles = await datastore.getDocMetaRefs();
 
         const progressTracker = new ProgressTracker(docMetaFiles.length,
                                                     `datastore:${datastore.id}#snapshot`);
@@ -99,7 +173,7 @@ export class Datastores {
             // // TODO: in the cloud store implementation it will probably be much
             // // faster to use a file JUST for the DocInfo to speed up loading.
             const dataProvider = AsyncProviders.memoize(async () => await datastore.getDocMeta(docMetaFile.fingerprint));
-            const docMetaProvider = AsyncProviders.memoize(async () => DocMetas.deserialize((await dataProvider())!));
+            const docMetaProvider = AsyncProviders.memoize(async () => DocMetas.deserialize((await dataProvider())!, docMetaFile.fingerprint));
             const docInfoProvider = AsyncProviders.memoize(async () => (await docMetaProvider()).docInfo);
             const docMetaFileRefProvider = AsyncProviders.memoize(async () => DocMetaFileRefs.createFromDocInfo(await docInfoProvider()));
 
@@ -144,7 +218,7 @@ export class Datastores {
     public static async purge(datastore: Datastore,
                               purgeListener: PurgeListener = NULL_FUNCTION) {
 
-        const docMetaFiles = await datastore.getDocMetaFiles();
+        const docMetaFiles = await datastore.getDocMetaRefs();
 
         let completed: number = 0;
         const total: number = docMetaFiles.length;
@@ -166,7 +240,7 @@ export class Datastores {
             work.push(async () => {
 
                 const data = await datastore.getDocMeta(docMetaFile.fingerprint);
-                const docMeta = DocMetas.deserialize(data!);
+                const docMeta = DocMetas.deserialize(data!, docMetaFile.fingerprint);
 
                 const docMetaFileRef = DocMetaFileRefs.createFromDocInfo(docMeta.docInfo);
 
@@ -213,7 +287,7 @@ export class Datastores {
         const persistenceLayer = new DefaultPersistenceLayer(datastore);
 
         const docMetaFiles =
-            (await datastore.getDocMetaFiles())
+            (await datastore.getDocMetaRefs())
                 .sort((d0, d1) => d0.fingerprint.localeCompare(d1.fingerprint));
 
         const result: DocInfo[] = [];
@@ -227,6 +301,25 @@ export class Datastores {
         return result;
 
     }
+
+    /**
+     * Assert that the specified network layer is supported by this datastore.
+     */
+    public static assertNetworkLayer(datastore: Datastore, networkLayer?: NetworkLayer) {
+
+        if (! networkLayer) {
+            // we support this because it's not specified.
+            return;
+        }
+
+        const capabilities = datastore.capabilities();
+
+        if (! capabilities.networkLayers.has(networkLayer)) {
+            throw new Error(`Datastore '${datastore.id}' does not support ${networkLayer} only ${capabilities.networkLayers}`);
+        }
+
+    }
+
 
 }
 

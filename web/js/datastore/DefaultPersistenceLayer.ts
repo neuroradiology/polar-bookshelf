@@ -1,25 +1,27 @@
-import {Datastore, DocMetaSnapshotEvent, FileMeta, FileRef, DocMetaSnapshotEventListener, SnapshotResult, ErrorListener} from './Datastore';
+import {BinaryFileData, Datastore, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileRef, SnapshotResult} from './Datastore';
+import {WriteFileOpts} from './Datastore';
+import {GetFileOpts} from './Datastore';
+import {DatastoreCapabilities} from './Datastore';
+import {DatastoreOverview} from './Datastore';
 import {DocMeta} from '../metadata/DocMeta';
 import {DocMetas} from '../metadata/DocMetas';
 import {isPresent, Preconditions} from '../Preconditions';
 import {Logger} from '../logger/Logger';
 import {Dictionaries} from '../util/Dictionaries';
 import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
-import {DeleteResult} from './Datastore';
 import {PersistenceLayer} from './PersistenceLayer';
 import {ISODateTimeStrings} from '../metadata/ISODateTimeStrings';
 import {Backend} from './Backend';
-import {DatastoreFile} from './DatastoreFile';
+import {DocFileMeta} from './DocFileMeta';
 import {Optional} from '../util/ts/Optional';
 import {Reducers} from '../util/Reducers';
 import {DocInfo} from '../metadata/DocInfo';
 import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
 import {DatastoreMutations} from './DatastoreMutations';
 import {UUIDs} from '../metadata/UUIDs';
-import {Datastores} from './Datastores';
-import {PersistenceLayers} from './PersistenceLayers';
-import {ErrorHandleFunction} from 'connect';
 import {NULL_FUNCTION} from '../util/Functions';
+import {DatastoreInitOpts} from './Datastore';
+import {WriteOpts} from './PersistenceLayer';
 
 const log = Logger.create();
 
@@ -31,20 +33,19 @@ const log = Logger.create();
  */
 export class DefaultPersistenceLayer implements PersistenceLayer {
 
-    public readonly stashDir: string;
-
-    public readonly logsDir: string;
+    public readonly id = 'default';
 
     public readonly datastore: Datastore;
 
+    private datastoreMutations: DatastoreMutations;
+
     constructor(datastore: Datastore) {
         this.datastore = datastore;
-        this.stashDir = this.datastore.stashDir;
-        this.logsDir = this.datastore.logsDir;
+        this.datastoreMutations = DatastoreMutations.create('written');
     }
 
-    public async init(errorListener: ErrorListener = NULL_FUNCTION) {
-        await this.datastore.init(errorListener);
+    public async init(errorListener: ErrorListener = NULL_FUNCTION, opts?: DatastoreInitOpts) {
+        await this.datastore.init(errorListener, opts);
     }
 
     public async stop() {
@@ -78,7 +79,7 @@ export class DefaultPersistenceLayer implements PersistenceLayer {
             throw new Error("Expected string and received: " + typeof data);
         }
 
-        const docMeta = DocMetas.deserialize(data);
+        const docMeta = DocMetas.deserialize(data, fingerprint);
 
         return docMeta;
 
@@ -93,7 +94,7 @@ export class DefaultPersistenceLayer implements PersistenceLayer {
         Preconditions.assertPresent(docMeta.docInfo, "No docInfo on docMeta");
         Preconditions.assertPresent(docMeta.docInfo.fingerprint, "No fingerprint on docInfo");
 
-        return this.write(docMeta.docInfo.fingerprint, docMeta, datastoreMutation);
+        return this.write(docMeta.docInfo.fingerprint, docMeta, {datastoreMutation});
 
     }
 
@@ -102,7 +103,9 @@ export class DefaultPersistenceLayer implements PersistenceLayer {
      */
     public async write(fingerprint: string,
                        docMeta: DocMeta,
-                       datastoreMutation: DatastoreMutation<DocInfo> = new DefaultDatastoreMutation()): Promise<DocInfo> {
+                       opts: WriteOpts = {}): Promise<DocInfo> {
+
+        const datastoreMutation = opts.datastoreMutation || new DefaultDatastoreMutation();
 
         Preconditions.assertNotNull(fingerprint, "fingerprint");
         Preconditions.assertNotNull(docMeta, "docMeta");
@@ -167,25 +170,30 @@ export class DefaultPersistenceLayer implements PersistenceLayer {
         const docInfo = Object.assign({}, docMeta.docInfo);
 
         const syncMutation = new DefaultDatastoreMutation<boolean>();
-        DatastoreMutations.pipe(syncMutation, datastoreMutation, () => docInfo);
+        this.datastoreMutations.pipe(syncMutation, datastoreMutation, () => docInfo);
 
-        await this.datastore.write(fingerprint, data, docInfo, syncMutation);
+        const writeOpts = {
+            ...opts,
+            datastoreMutation: syncMutation,
+        };
+
+        await this.datastore.write(fingerprint, data, docInfo, writeOpts);
 
         return docInfo;
 
     }
 
-    public async synchronizeDocs(...fingerprints: string[]): Promise<void> {
-        return this.datastore.synchronizeDocs(...fingerprints);
+    public async synchronizeDocs(...docMetaRefs: DocMetaRef[]): Promise<void> {
+        return this.datastore.synchronizeDocs(...docMetaRefs);
     }
 
-    public getDocMetaFiles(): Promise<DocMetaRef[]> {
-        return this.datastore.getDocMetaFiles();
+    public getDocMetaRefs(): Promise<DocMetaRef[]> {
+        return this.datastore.getDocMetaRefs();
     }
 
     /**
-     * Get a current snapshot of the internal state of the Datastore by receiving
-     * DocMetaSnapshotEvent on the initial state.
+     * Get a current snapshot of the internal state of the Datastore by
+     * receiving DocMetaSnapshotEvent on the initial state.
      */
     public snapshot(listener: DocMetaSnapshotEventListener,
                     errorListener: ErrorListener = NULL_FUNCTION): Promise<SnapshotResult> {
@@ -196,20 +204,28 @@ export class DefaultPersistenceLayer implements PersistenceLayer {
         return this.datastore.createBackup();
     }
 
-    public writeFile(backend: Backend, ref: FileRef, data: Buffer | string, meta: FileMeta = {}): Promise<DatastoreFile> {
-        return this.datastore.writeFile(backend, ref, data, meta);
+    public writeFile(backend: Backend, ref: FileRef, data: BinaryFileData, opts?: WriteFileOpts): Promise<DocFileMeta> {
+        return this.datastore.writeFile(backend, ref, data, opts);
     }
 
     public containsFile(backend: Backend, ref: FileRef): Promise<boolean> {
         return this.datastore.containsFile(backend, ref);
     }
 
-    public getFile(backend: Backend, ref: FileRef): Promise<Optional<DatastoreFile>> {
-        return this.datastore.getFile(backend, ref);
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
+        return this.datastore.getFile(backend, ref, opts);
     }
 
     public addDocMetaSnapshotEventListener(docMetaSnapshotEventListener: DocMetaSnapshotEventListener): void {
         this.datastore.addDocMetaSnapshotEventListener(docMetaSnapshotEventListener);
+    }
+
+    public async overview(): Promise<DatastoreOverview | undefined> {
+        return await this.datastore.overview();
+    }
+
+    public capabilities(): DatastoreCapabilities {
+        return this.datastore.capabilities();
     }
 
     public async deactivate() {

@@ -1,13 +1,11 @@
 // A datastore that supports ledgers and checkpoints.
 import {DocMetaFileRef, DocMetaFileRefs, DocMetaRef} from './DocMetaRef';
 import {DeleteResult} from './Datastore';
-import {Directories} from './Directories';
 import {Backend} from './Backend';
-import {DatastoreFile} from './DatastoreFile';
+import {DocFileMeta} from './DocFileMeta';
 import {Optional} from '../util/ts/Optional';
 import {DocInfo, IDocInfo} from '../metadata/DocInfo';
 import {FileHandle} from '../util/Files';
-import {Simulate} from 'react-dom/test-utils';
 import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
 import {DocMeta} from '../metadata/DocMeta';
 import {Hashcode} from '../metadata/Hashcode';
@@ -17,7 +15,10 @@ import {UUID} from '../metadata/UUID';
 import {AsyncWorkQueues} from '../util/AsyncWorkQueues';
 import {DocMetas} from '../metadata/DocMetas';
 import {DatastoreMutations} from './DatastoreMutations';
-import {IEventDispatcher, SimpleReactor} from '../reactor/SimpleReactor';
+import {ISODateTimeString} from '../metadata/ISODateTimeStrings';
+import {Prefs} from '../util/prefs/Prefs';
+import {isPresent} from '../Preconditions';
+import {printf} from '../logger/Console';
 
 export interface Datastore extends BinaryDatastore, WritableDatastore {
 
@@ -27,26 +28,9 @@ export interface Datastore extends BinaryDatastore, WritableDatastore {
     readonly id: DatastoreID;
 
     /**
-     * @Deprecated
-     */
-    readonly stashDir: string;
-
-    // readonly filesDir: string;
-
-    /**
-     * @Deprecated
-     */
-    readonly logsDir: string;
-
-    /**
-     * @Deprecated
-     */
-    readonly directories: Directories;
-
-    /**
      * Init the datastore, potentially reading files of disk, the network, etc.
      */
-    init(errorListener?: ErrorListener): Promise<InitResult>;
+    init(errorListener?: ErrorListener, opts?: DatastoreInitOpts): Promise<InitResult>;
 
     stop(): Promise<void>;
 
@@ -67,8 +51,7 @@ export interface Datastore extends BinaryDatastore, WritableDatastore {
     /**
      * Return an array of {DocMetaRef}s currently in the repository.
      */
-    // TODO: refactor to getDocMetaRefs
-    getDocMetaFiles(): Promise<DocMetaRef[]>;
+    getDocMetaRefs(): Promise<DocMetaRef[]>;
 
     /**
      * Get a current snapshot of the internal state of the Datastore by
@@ -85,28 +68,86 @@ export interface Datastore extends BinaryDatastore, WritableDatastore {
     addDocMetaSnapshotEventListener(docMetaSnapshotEventListener: DocMetaSnapshotEventListener): void;
 
     /**
-     * Deactivate using this datasource. For most datasources this is not used
+     * Deactivate using this datastore. For most datastores this is not used
      * but for cloud sources this would logout and perform other tasks.
      */
     deactivate(): Promise<void>;
 
-    // TODO: we need a new method with the following semantics:
+    /**
+     * Get an overview of the datastore including the time it was created as
+     * well as other stats including the number of docs.
+     */
+    overview(): Promise<DatastoreOverview | undefined>;
 
-    // - we can add it AFTER the init()
-    //
-    // - it starts working immediately and in offline mode and then continues
-    //   to work when we get online snapshots
-    //
-    // - it give us FULL visibility into the lifestyle of a document including
-    //   create, update, and delete.
-    //
-    // - this is VERY similar (but somewhat different) than the firebase
-    // snapshot support
+    /**
+     * Get a Prefs object that supports reading and writing key/values to a
+     * simple prefs store.
+     */
+    getPrefs(): PrefsProvider;
+
+    capabilities(): DatastoreCapabilities;
+
+}
+
+// writable, readonly , ro vs rw... readonly is better BUT that's reserved by
+// typescript
+
+export type Mode = 'rw' | 'ro';
+
+export interface DatastorePermission {
+
+    /**
+     * The high level permissions mode for this datastore. Applied to ALL
+     * access to the store not on a file by file basis.
+     */
+    readonly mode: Mode;
+
+}
+
+export interface DatastoreCapabilities {
+
+    /**
+     * Provides callers with the available network layers for this datastore.
+     */
+    readonly networkLayers: ReadonlySet<NetworkLayer>;
+
+    readonly permission: DatastorePermission;
+
+}
+
+export interface DatastoreInfo {
+
+    /**
+     * The time the datastore was created.
+     */
+    readonly created: ISODateTimeString;
+
+}
+
+export interface DatastoreOverview {
+
+    /**
+     * The time the datastore was created.  Right now we don't always know
+     * when the datastore was created due to adding this feature later (storing
+     * the creation time) later.
+     */
+    readonly created?: ISODateTimeString;
+
+    /**
+     * The number of documents in the datastore.
+     */
+    readonly nrDocs: number;
 
 }
 
 export abstract class AbstractDatastore {
 
+    protected datastoreMutations: DatastoreMutations;
+
+    protected constructor() {
+        this.datastoreMutations = DatastoreMutations.create('written');
+
+    }
     public async writeDocMeta(docMeta: DocMeta,
                               datastoreMutation: DatastoreMutation<DocInfo> = new DefaultDatastoreMutation()): Promise<DocInfo> {
 
@@ -114,19 +155,39 @@ export abstract class AbstractDatastore {
         const docInfo = docMeta.docInfo;
 
         const syncMutation = new DefaultDatastoreMutation<boolean>();
-        DatastoreMutations.pipe(syncMutation, datastoreMutation, () => docInfo);
+        this.datastoreMutations.pipe(syncMutation, datastoreMutation, () => docInfo);
 
-        await this.write(docMeta.docInfo.fingerprint, data, docInfo, syncMutation);
+        await this.write(docMeta.docInfo.fingerprint, data, docInfo, {datastoreMutation: syncMutation});
         return docInfo;
+
+    }
+
+    public abstract writeFile(backend: Backend,
+                              ref: FileRef,
+                              data: BinaryFileData,
+                              opts?: WriteFileOpts): Promise<DocFileMeta>;
+
+    /**
+     * Handle the file write if specify as a dependency within write()
+     */
+    protected async handleWriteFile(opts?: WriteOpts) {
+
+        if (! opts) {
+            return;
+        }
+
+        if (opts.writeFile) {
+            await this.writeFile(opts.writeFile.backend, opts.writeFile, opts.writeFile.data);
+        }
 
     }
 
     public abstract write(fingerprint: string,
                           data: any,
                           docInfo: IDocInfo,
-                          datastoreMutation?: DatastoreMutation<boolean>): Promise<void>;
+                          opts?: WriteOpts): Promise<void>;
 
-    public async synchronizeDocs(...fingerprints: string[]): Promise<void> {
+    public async synchronizeDocs(...docMetaRefs: DocMetaRef[]): Promise<void> {
         // noop
     }
 
@@ -135,10 +196,24 @@ export abstract class AbstractDatastore {
     }
 
     public async createBackup(): Promise<void> {
+
         // only supported with the disk datastore.
-        throw new Error("Not supported with this datatore");
+        // TODO (webapp) I think this needs to be enabled for Firebase?
+        // throw new Error("Not supported with this datatore");
 
     }
+
+}
+
+export interface WriteOpts {
+
+    readonly datastoreMutation?: DatastoreMutation<boolean>;
+
+    /**
+     * Also write a file (PDF, PHZ) with the DocMeta data so that it's atomic
+     * and that the operations are ordered properly.
+     */
+    readonly writeFile?: BackendFileRefData;
 
 }
 
@@ -159,14 +234,18 @@ interface WritableDatastore {
      * @param fingerprint The fingerprint of the data we should be working with.
      * @param data The RAW data to decode by the PersistenceLayer
      * @param docInfo The DocInfo for this document that we're writing
+     * @param opts The opts to use when writing the file.
      */
-    write(fingerprint: string, data: any, docInfo: IDocInfo, datastoreMutation?: DatastoreMutation<boolean>): Promise<void>;
+    write(fingerprint: string,
+          data: string,
+          docInfo: IDocInfo,
+          opts?: WriteOpts): Promise<void>;
 
     /**
      * Make sure the docs with the given fingerprints are synchronized with
      * this datastore. Only implemented in cloud datastores.
      */
-    synchronizeDocs(...fingerprints: string[]): Promise<void>;
+    synchronizeDocs(...docMetaRefs: DocMetaRef[]): Promise<void>;
 
     createBackup(): Promise<void>;
 
@@ -183,11 +262,31 @@ interface ReadableBinaryDatastore {
 
     containsFile(backend: Backend, ref: FileRef): Promise<boolean>;
 
-    getFile(backend: Backend, ref: FileRef): Promise<Optional<DatastoreFile>>;
+    getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>>;
 
 }
 
-interface WritableBinaryDatastore {
+/**
+ * Options for getFile
+ */
+export interface GetFileOpts {
+
+    /**
+     * Allows the caller to specify a more specific network layer for the
+     * file operation and returning a more specific URL.
+     */
+    readonly networkLayer?: NetworkLayer;
+
+    /**
+     * When true, we avoid the existence check on teh file when appropriate and
+     * we're pretty certain that the file already exists.  This can be helpful
+     * in the UI when we just want to open a file and we have fresh metadata.
+     */
+    readonly noExistenceCheck?: boolean;
+
+}
+
+export interface WritableBinaryDatastore {
 
     /**
      * Add file data to the datastore.  This is used for binary data or other
@@ -197,13 +296,67 @@ interface WritableBinaryDatastore {
     writeFile(backend: Backend,
               ref: FileRef,
               data: BinaryFileData,
-              meta?: FileMeta): Promise<DatastoreFile>;
+              opts?: WriteFileOpts): Promise<DocFileMeta>;
 
     deleteFile(backend: Backend, ref: FileRef): Promise<void>;
 
 }
 
-export type BinaryFileData = FileHandle | Buffer | string;
+export interface WriteFileOpts {
+
+    readonly meta?: FileMeta;
+
+    /**
+     * Set the file visibility.  Default is private.
+     */
+    readonly visibility?: Visibility;
+
+    /**
+     * Only update metadata.  Don't actually write data.
+     */
+    readonly updateMeta?: boolean;
+
+    readonly datastoreMutation?: DatastoreMutation<boolean>;
+
+}
+
+export class DefaultWriteFileOpts implements WriteFileOpts {
+    public readonly meta: FileMeta = {};
+    public readonly visibility = Visibility.PRIVATE;
+}
+
+export interface WritableBinaryMetaDatastore {
+    // writeFileMeta(backend: Backend, ref: FileRef, docFileMeta: DocFileMeta): Promise<void>;
+}
+
+export type BinaryFileData = FileHandle | Buffer | string | Blob | NodeJS.ReadableStream;
+
+export function isBinaryFileData(data: any): boolean {
+
+    if (! isPresent(data)) {
+        return false;
+    }
+
+    if (typeof data === 'string') {
+        return true;
+    }
+
+    if (data instanceof Buffer) {
+        return true;
+    }
+
+    if (data instanceof Blob) {
+        return true;
+    }
+
+    if (isPresent(data.path)) {
+        // if it seems like a FileHandle then use it as it will be supported
+        return true;
+    }
+
+    return false;
+
+}
 
 export interface FileRef {
 
@@ -217,8 +370,40 @@ export interface FileRef {
 
 }
 
+/**
+ * A FileRef with a backend.
+ */
+export interface BackendFileRef extends FileRef {
+
+    readonly backend: Backend;
+
+}
+
+export class BackendFileRefs {
+
+    public static equals(b0: BackendFileRef, b1: BackendFileRef): boolean {
+        return b0.backend === b1.backend && b0.name === b1.name && b0.hashcode === b1.hashcode;
+    }
+
+}
+
+export interface BackendFileRefData extends BackendFileRef {
+    readonly data: BinaryFileData;
+}
+
 // noinspection TsLint
-export type FileMeta = {[key: string]: string};
+/**
+ * Arbitrary settings for files specific to each storage layer.  Firebase uses
+ * visibility and uid.
+ */
+export interface FileMeta {
+
+    // TODO: I should also include the StorageSettings from Firebase here to
+    // give it a set of standardized fields like contentType as screenshots
+    // needs to be added with a file type.
+    [key: string]: string;
+
+}
 
 /**
  *
@@ -552,6 +737,10 @@ export class SyncDocs {
         // file references are valid and setup properly before we write
         // (I think).
 
+        // FIXME: this needs to migrate to using
+        // Datastores and BackendFileRegs to get the underlying files and the ref for
+        // it so that we can get all the attachments in one pass.
+
         if (docInfo.filename) {
 
             const stashFile: SyncFile = {
@@ -579,3 +768,77 @@ export class SyncDocs {
 }
 
 export type DatastoreID = string;
+
+
+export interface DatastoreInitOpts {
+
+    readonly noInitialSnapshot?: boolean;
+
+    /**
+     * Disable sync and just start the datastore as a client for read/write.
+     */
+    readonly noSync?: boolean;
+
+}
+
+export interface PrefsProvider {
+
+    /**
+     * Get the latest copy of the prefs we're using.
+     */
+    get(): Prefs;
+
+}
+
+export enum Visibility {
+
+    /**
+     * Only visible for the user.
+     */
+    PRIVATE = 'private', /* or 0 */
+
+    /**
+     * Only to users that this user is following.
+     */
+    FOLLOWING = 'following', /* or 1 */
+
+    /**
+     * To anyone on the service.
+     */
+    PUBLIC = 'public' /* or 2 */
+
+}
+
+/**
+ * The network layer specifies the access to a resource based on the network
+ * type.  By default each datastore figures out the ideal network layer to
+ * return file references from but based on the capabilities the caller
+ * can specify a specific layer.
+ *
+ * The following types are supported:
+ *
+ * local: Access via the local disk.
+ *    - pros:
+ *      - VERY fast
+ *    - cons:
+ *      - Not sharable with others
+ *
+ * web: Access is available via the public web.
+ *    - pros:
+ *       - sharing works
+ *       - access across multiple devices
+ *    - cons:
+ *       - may not be usable for certain people (classified information, etC).
+ *
+ */
+export type NetworkLayer = 'local' | 'web';
+
+export class NetworkLayers {
+
+    public static LOCAL = new Set<NetworkLayer>(['local']);
+
+    public static LOCAL_AND_WEB = new Set<NetworkLayer>(['local', 'web']);
+
+    public static WEB = new Set<NetworkLayer>(['web']);
+
+}

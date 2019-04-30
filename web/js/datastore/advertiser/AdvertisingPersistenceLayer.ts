@@ -6,6 +6,8 @@ import {PersistenceLayerEvent} from '../PersistenceLayerEvent';
 import {PersistenceLayer} from '../PersistenceLayer';
 import {ListenablePersistenceLayer} from '../ListenablePersistenceLayer';
 import {AbstractAdvertisingPersistenceLayer} from './AbstractAdvertisingPersistenceLayer';
+import {ErrorListener} from '../Datastore';
+import {DatastoreInitOpts} from '../Datastore';
 
 /**
  * A PersistenceLayer that allows the user to receive advertisements regarding
@@ -19,18 +21,20 @@ export class AdvertisingPersistenceLayer
 
     private readonly docInfoAdvertisementListenerService = new DocInfoAdvertisementListenerService();
 
+    public readonly id = 'advertising';
+
     constructor(delegate: PersistenceLayer) {
         super(delegate);
     }
 
-    public async init(): Promise<void> {
+    public async init(errorListener?: ErrorListener, opts?: DatastoreInitOpts): Promise<void> {
 
         this.docInfoAdvertisementListenerService
             .addEventListener((adv) => this.onDocInfoAdvertisement(adv));
 
         this.docInfoAdvertisementListenerService.start();
 
-        return this.delegate.init();
+        await this.delegate.init(errorListener, opts);
 
     }
 

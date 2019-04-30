@@ -4,7 +4,7 @@ import {Statistics} from '../../../../web/js/metadata/Statistics';
 import {IDocInfo} from '../../../../web/js/metadata/DocInfo';
 import {ResponsivePie} from '@nivo/pie';
 import StatTitle from './StatTitle';
-import {Table} from 'reactstrap';
+import Table from 'reactstrap/lib/Table';
 
 const log = Logger.create();
 
@@ -22,14 +22,17 @@ export default class TopTagsTable extends React.Component<IProps, IState> {
 
         const topTags = Statistics.computeTopTags(this.props.docInfos, 20);
 
-        return <div>
+        return <div id="top-tags-table">
             <StatTitle>Top Tags</StatTitle>
             <Table>
-            {topTags.map(topTag =>
-                 <tr key={topTag.key}>
-                     <td className="pt-1 pb-1">{topTag.key}</td>
-                     <td className="pt-1 pb-1">{topTag.value}</td>
-                 </tr>)}
+                <tbody>
+                    {topTags.map(topTag =>
+                         <tr key={topTag.key}>
+                             <td className="pt-1 pb-1">{topTag.key}</td>
+                             <td className="pt-1 pb-1">{topTag.value}</td>
+                         </tr>)}
+
+                </tbody>
             </Table>
         </div>;
     }

@@ -1,28 +1,16 @@
-import {DocMetaRef} from '../../../web/js/datastore/DocMetaRef';
-import {Optional} from '../../../web/js/util/ts/Optional';
-import {ListenablePersistenceLayer} from '../../../web/js/datastore/ListenablePersistenceLayer';
 import {Logger} from '../../../web/js/logger/Logger';
-import {ProgressCalculator} from '../../../web/js/util/ProgressCalculator';
-import {ProgressBar} from '../../../web/js/ui/progress_bar/ProgressBar';
-import {RepoDocInfoIndex} from './RepoDocInfoIndex';
 import {RepoDocInfos} from './RepoDocInfos';
-import {Dictionaries} from '../../../web/js/util/Dictionaries';
-import {RepoDocInfo} from './RepoDocInfo';
 import {DocMeta} from '../../../web/js/metadata/DocMeta';
-import {DocMetaSnapshotEvent, SnapshotProgress, SnapshotUnsubscriber, DocMetaSnapshotEvents, MutationType} from '../../../web/js/datastore/Datastore';
-import {ElectronContextTypes} from '../../../web/js/electron/context/ElectronContextTypes';
-import {Promises} from '../../../web/js/util/Promises';
+import {MutationType, SnapshotProgress} from '../../../web/js/datastore/Datastore';
 import {PersistenceLayerManager} from '../../../web/js/datastore/PersistenceLayerManager';
-import {PersistenceLayerManagerEvent} from '../../../web/js/datastore/PersistenceLayerManager';
-import {NULL_FUNCTION} from '../../../web/js/util/Functions';
 import {PersistenceLayer} from '../../../web/js/datastore/PersistenceLayer';
 import {IEventDispatcher, SimpleReactor} from '../../../web/js/reactor/SimpleReactor';
-import {isPresent} from '../../../web/js/Preconditions';
 import {ProgressTrackerIndex} from '../../../web/js/util/ProgressTrackerIndex';
 import {EventListener} from '../../../web/js/reactor/EventListener';
 import {RepoDocMeta} from './RepoDocMeta';
 import {RepoDocMetas} from './RepoDocMetas';
 import {DeterminateProgressBar} from '../../../web/js/ui/progress_bar/DeterminateProgressBar';
+import {IndeterminateProgressBar} from '../../../web/js/ui/progress_bar/IndeterminateProgressBar';
 
 const log = Logger.create();
 
@@ -44,6 +32,10 @@ export class RepoDocMetaLoader {
         return this.eventDispatcher.removeEventListener(listener);
     }
 
+    public dispatchEvent(event: RepoDocMetaEvent) {
+        this.eventDispatcher.dispatchEvent(event);
+    }
+
     public async start() {
 
         // TODO: handle events properly..
@@ -60,7 +52,9 @@ export class RepoDocMetaLoader {
 
     private onPersistenceLayerChanged(persistenceLayer: PersistenceLayer) {
 
-        let progressBar: ProgressBar | undefined;
+        log.info("onPersistenceLayerChanged");
+
+        this.addInitialProgressListener(persistenceLayer);
 
         const progressTrackerIndex = new ProgressTrackerIndex();
 
@@ -74,7 +68,11 @@ export class RepoDocMetaLoader {
 
                 const minProgress = progressTrackerIndex.min();
 
-                DeterminateProgressBar.update(minProgress);
+                if (minProgress.isPresent()) {
+                    DeterminateProgressBar.update(minProgress.get());
+                } else {
+                    DeterminateProgressBar.update(100);
+                }
 
                 const mutations: RepoDocMetaMutation[] = [];
 
@@ -123,6 +121,22 @@ export class RepoDocMetaLoader {
         });
 
     }
+
+    private addInitialProgressListener(persistenceLayer: PersistenceLayer) {
+
+        let progressBar = IndeterminateProgressBar.create();
+
+        persistenceLayer.addDocMetaSnapshotEventListener(async () => {
+
+            if (progressBar) {
+                progressBar.destroy();
+                progressBar = null!;
+            }
+
+        });
+
+    }
+
 
     private toRepoDocMeta(fingerprint: string, docMeta?: DocMeta): RepoDocMeta | undefined {
 

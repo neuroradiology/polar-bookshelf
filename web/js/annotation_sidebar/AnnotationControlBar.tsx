@@ -1,13 +1,7 @@
 import * as React from 'react';
 import {DocAnnotation} from './DocAnnotation';
 import {AnnotationSidebars} from './AnnotationSidebars';
-import Collapse from 'reactstrap/lib/Collapse';
-import {AnnotationCommentBox} from './AnnotationCommentBox';
 import Moment from 'react-moment';
-import {Comments} from '../metadata/Comments';
-import {Refs} from '../metadata/Refs';
-import {AnnotationFlashcardBox} from './flashcard_input/AnnotationFlashcardBox';
-import {Flashcards} from '../metadata/Flashcards';
 import {IStyleMap} from '../react/IStyleMap';
 import {AnnotationDropdown} from './AnnotationDropdown';
 import {AnnotationType} from '../metadata/AnnotationType';
@@ -16,10 +10,13 @@ import {RendererAnalytics} from '../ga/RendererAnalytics';
 import {CommentIcon} from '../ui/standard_icons/CommentIcon';
 import {FlashcardIcon} from '../ui/standard_icons/FlashcardIcon';
 import {FlashcardType} from '../metadata/FlashcardType';
-import {Flashcard} from '../metadata/Flashcard';
-import {Functions} from '../util/Functions';
-import {FrontAndBackFields, ClozeFields} from './flashcard_input/FlashcardInput';
-
+import {ClozeFields, FrontAndBackFields} from './child_annotations/flashcards/flashcard_input/FlashcardInputs';
+import {Comment} from "../metadata/Comment";
+import {CreateComment} from "./child_annotations/comments/CreateComment";
+import {CommentActions} from "./child_annotations/comments/CommentActions";
+import {CreateFlashcard} from './child_annotations/flashcards/CreateFlashcard';
+import {FlashcardActions} from './child_annotations/flashcards/FlashcardActions';
+import {Doc} from '../metadata/Doc';
 
 const Styles: IStyleMap = {
 
@@ -27,14 +24,6 @@ const Styles: IStyleMap = {
         paddingTop: '4px',
         color: 'red !important',
         fontSize: '15px'
-
-        // minWidth: '350px',
-        // width: '350px'
-    },
-
-    icon: {
-        fontSize: '16px',
-        color: '#a4a4a4'
 
         // minWidth: '350px',
         // width: '350px'
@@ -58,7 +47,7 @@ export class AnnotationControlBar extends React.Component<IProps, IState> {
     constructor(props: IProps, context: any) {
         super(props, context);
 
-        this.onCommentCreated.bind(this);
+        this.onComment = this.onComment.bind(this);
 
         this.state = {
             activeInputComponent: 'none'
@@ -71,10 +60,10 @@ export class AnnotationControlBar extends React.Component<IProps, IState> {
 
         return (
 
-            <div className="annotation-control-bar">
+            <div className="annotation-control-bar mb-3">
 
                 <div style={Styles.barBody}
-                     className="flexbar annotation-buttons border-top pt-1 pb-2">
+                     className="flexbar annotation-buttons border-bottom pt-0 pb-0">
 
                     <div style={Styles.barChild}
                          className="text-muted annotation-context-link">
@@ -91,64 +80,53 @@ export class AnnotationControlBar extends React.Component<IProps, IState> {
 
                         {/*TODO: make these a button with a 'light' color and size of 'sm'*/}
 
-                        <Button className="text-muted"
+                        <Button className="text-muted p-1"
                                 title="Create comment"
                                 size="sm"
                                 color="light"
                                 style={Styles.button}
+                                disabled={! this.props.doc.mutable}
                                 onClick={() => this.toggleActiveInputComponent('comment')}>
 
                             <CommentIcon/>
 
                         </Button>
 
-                        <Button className="text-muted"
+                        <Button className="ml-1 text-muted p-1"
                                 title="Create flashcard"
                                 style={Styles.button}
                                 size="sm"
                                 color="light"
+                                disabled={! this.props.doc.mutable}
                                 onClick={() => this.toggleActiveInputComponent('flashcard')}>
 
                             <FlashcardIcon/>
 
                         </Button>
 
-                        {/*<a className="text-muted ml-2"*/}
-                           {/*title="Jump to annotation contet"*/}
-                           {/*style={Styles.button}*/}
-                           {/*href="#" */}
-                           {/*onClick={() => this.onContext(annotation)}>*/}
-                            {/*<i style={Styles.icon}*/}
-                               {/*className="fas fa-bullseye"></i>*/}
-                        {/*</a>*/}
-
-                        <AnnotationDropdown id={'annotation-dropdown-' + annotation.id}
-                                            annotation={annotation}
-                                            onDelete={() => this.onDelete(annotation)}
-                                            onCreateComment={() => this.toggleActiveInputComponent('comment')}
-                                            onCreateFlashcard={() => this.toggleActiveInputComponent('flashcard')}
-                                            onJumpToContext={() => this.onJumpToContext(annotation)}/>
-
+                        <div className="ml-1">
+                            <AnnotationDropdown id={'annotation-dropdown-' + annotation.id}
+                                                disabled={! this.props.doc.mutable}
+                                                annotation={annotation}
+                                                onDelete={() => this.onDelete(annotation)}
+                                                onCreateComment={() => this.toggleActiveInputComponent('comment')}
+                                                onCreateFlashcard={() => this.toggleActiveInputComponent('flashcard')}
+                                                onJumpToContext={() => this.onJumpToContext(annotation)}/>
+                        </div>
 
                     </div>
 
                 </div>
 
-                <Collapse timeout={0} isOpen={this.state.activeInputComponent === 'comment'}>
+                <CreateComment id={annotation.id}
+                               active={this.state.activeInputComponent === 'comment'}
+                               onCancel={() => this.toggleActiveInputComponent('none')}
+                               onComment={(html) => this.onComment(html)}/>
 
-                    <AnnotationCommentBox annotation={annotation}
-                                          onCancel={() => this.toggleActiveInputComponent('none')}
-                                          onCommentCreated={(html) => this.onCommentCreated(html)}/>
-
-                </Collapse>
-
-                <Collapse timeout={0} isOpen={this.state.activeInputComponent === 'flashcard'}>
-
-                    <AnnotationFlashcardBox id={annotation.id}
-                                            onCancel={() => this.toggleActiveInputComponent('none')}
-                                            onFlashcardCreated={(type, fields) => this.onFlashcardCreated(type, fields)}/>
-
-                </Collapse>
+                <CreateFlashcard id={annotation.id}
+                                 active={this.state.activeInputComponent === 'flashcard'}
+                                 onCancel={() => this.toggleActiveInputComponent('none')}
+                                 onFlashcardCreated={(type, fields) => this.onFlashcardCreated(type, fields)}/>
 
             </div>
 
@@ -177,7 +155,7 @@ export class AnnotationControlBar extends React.Component<IProps, IState> {
         });
     }
 
-    private onCommentCreated(html: string) {
+    private onComment(html: string, existingComment?: Comment) {
 
         RendererAnalytics.event({category: 'annotations', action: 'comment-created'});
 
@@ -189,13 +167,7 @@ export class AnnotationControlBar extends React.Component<IProps, IState> {
         // which I need to fix in the HTML sanitizer.
         // html = HTMLSanitizer.sanitize(html);
 
-        const {annotation} = this.props;
-
-        const ref = Refs.createFromAnnotationType(annotation.id,
-                                                  annotation.annotationType);
-
-        const comment = Comments.createHTMLComment(html, ref);
-        annotation.pageMeta.comments[comment.id] = comment;
+        CommentActions.create(this.props.annotation, html);
 
         this.setState({
             activeInputComponent: 'none'
@@ -207,51 +179,18 @@ export class AnnotationControlBar extends React.Component<IProps, IState> {
 
         RendererAnalytics.event({category: 'annotations', action: 'flashcard-created'});
 
+        FlashcardActions.create(this.props.annotation, type, fields);
+
         this.setState({
             activeInputComponent: 'none'
-        });
-
-        Functions.withTimeout(() => {
-
-            // TODO: right now it seems to strip important CSS styles and data
-            // URLs which I need to fix in the HTML sanitizer. html =
-            // HTMLSanitizer.sanitize(html);
-
-            const {annotation} = this.props;
-
-            const ref = Refs.createFromAnnotationType(annotation.id, annotation.annotationType);
-
-            let flashcard: Flashcard | undefined;
-
-            if (type === FlashcardType.BASIC_FRONT_BACK) {
-
-                const frontAndBackFields = fields as FrontAndBackFields;
-                const {front, back} = frontAndBackFields;
-
-                flashcard = Flashcards.createFrontBack(front, back, ref);
-
-            }
-
-            if (type === FlashcardType.CLOZE) {
-
-                const clozeFields = fields as ClozeFields;
-                const {text} = clozeFields;
-
-                flashcard = Flashcards.createCloze(text, ref);
-
-            }
-
-            if (flashcard) {
-                annotation.pageMeta.flashcards[flashcard.id] = Flashcards.createMutable(flashcard);
-            }
-
         });
 
     }
 
 }
 interface IProps {
-    annotation: DocAnnotation;
+    readonly doc: Doc;
+    readonly annotation: DocAnnotation;
 }
 
 interface IState {

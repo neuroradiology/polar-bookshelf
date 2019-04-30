@@ -128,8 +128,7 @@ export class RepoDocMetaManager {
         Preconditions.assertPresent(repoDocInfo.docInfo);
         Preconditions.assertPresent(title);
 
-        repoDocInfo = Object.assign({}, repoDocInfo);
-        repoDocInfo.title = title;
+        repoDocInfo = {...repoDocInfo, title};
         repoDocInfo.docInfo.title = title;
 
         this.updateFromRepoDocInfo(repoDocInfo.fingerprint, repoDocInfo);
@@ -147,8 +146,7 @@ export class RepoDocMetaManager {
         Preconditions.assertPresent(repoDocInfo.docInfo);
         Preconditions.assertPresent(tags);
 
-        repoDocInfo = Object.assign({}, repoDocInfo);
-        repoDocInfo.tags = Tags.toMap(tags);
+        repoDocInfo = {...repoDocInfo, tags: Tags.toMap(tags)};
         repoDocInfo.docInfo.tags = Tags.toMap(tags);
 
         this.updateFromRepoDocInfo(repoDocInfo.fingerprint, repoDocInfo);
@@ -166,7 +164,7 @@ export class RepoDocMetaManager {
         // delete it from the repo now.
         const docMetaFileRef = DocMetaFileRefs.createFromDocInfo(repoDocInfo.docInfo);
 
-        return persistenceLayer.delete(docMetaFileRef);
+        return await persistenceLayer.delete(docMetaFileRef);
 
     }
 

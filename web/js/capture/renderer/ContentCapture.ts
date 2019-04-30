@@ -3,7 +3,7 @@
  */
 import {Dict} from '../../util/Dict';
 import {Result} from '../../util/Result';
-import {CapturedDoc, Captured, DocTypeFormat, ScrollBox, Overflow} from './Captured';
+import {Captured, CapturedDoc, DocTypeFormat, Overflow, ScrollBox} from './Captured';
 import {Results} from '../../util/Results';
 import {AdBlocker} from './AdBlocker';
 
@@ -31,7 +31,9 @@ export class ContentCapture {
      * @param [result] The result we are building.
      *
      */
-    public static captureHTML(contentDoc?: Document, url?: string, result?: Captured): Captured {
+    public static captureHTML(contentDoc?: Document,
+                              url?: string,
+                              result?: Captured): Captured {
 
         const ENABLE_IFRAMES = true;
 
@@ -52,13 +54,9 @@ export class ContentCapture {
 
                 /**
                  * The captured documents indexed by URL
-                 * @type {Object<String,Object>}
                  */
                 capturedDocuments: {},
 
-                // TODO: this should be something other chan chtml now.  This
-                // actually represents the format of the captured representation
-                // not the actual storage value on disk.
                 type: "phz",
 
                 version: "4.0.0",
@@ -82,6 +80,10 @@ export class ContentCapture {
             return result;
         }
 
+        // this has to be done BEFORE we clone because there is no mapping from
+        // the stylesheet to the element after we clone it.
+        this.inlineStyles(contentDoc);
+
         const cloneDoc: Document = <Document> contentDoc.cloneNode(true);
 
         result.capturedDocuments[url]
@@ -100,7 +102,7 @@ export class ContentCapture {
             let nrHandled = 0;
             let nrSkipped = 0;
 
-            iframes.forEach((iframe) => {
+            for (const iframe of Array.from(iframes)) {
 
                 const frameValidity = ContentCapture.computeFrameValidity(iframe);
 
@@ -119,7 +121,7 @@ export class ContentCapture {
                     ++nrSkipped;
                 }
 
-            });
+            }
 
             console.log(`Handled ${nrHandled} and skipped ${nrSkipped} iframes`);
 
@@ -164,7 +166,7 @@ export class ContentCapture {
             throw new Error("No cloneDoc");
         }
 
-        // FIXME: include a fingerprint in the output JSON which should probably
+        // TODO: include a fingerprint in the output JSON which should probably
         // be based on the URL.
 
         // TODO: store many of these fields in the HTML too because the iframes
@@ -357,6 +359,52 @@ export class ContentCapture {
         return result;
 
     }
+
+    private static inlineStyles(doc: Document): any {
+
+        const result = {
+            inlined: 0
+        };
+
+        function toSerializedStylesheet(styleSheet: CSSStyleSheet): string {
+
+            let buff = "";
+
+            const imports: CSSStyleSheet[] = [];
+
+            for (const rule of Array.from(styleSheet.rules)) {
+
+                // buff += rule.cssText + '\n';
+
+                buff += rule.cssText;
+
+            }
+
+            return buff;
+
+        }
+
+        for (const styleSheet of Array.from(doc.styleSheets)) {
+
+            if (styleSheet.ownerNode instanceof HTMLElement) {
+
+                if (styleSheet.ownerNode.tagName === 'STYLE') {
+
+                    // the ownerNode is just going to be flat out wrong here...
+                    // shoot
+
+                    styleSheet.ownerNode.innerText = toSerializedStylesheet( <CSSStyleSheet> styleSheet);
+                    ++result.inlined;
+                }
+
+            }
+
+        }
+
+        return result;
+
+    }
+
 
     private static cleanupRemoveScripts(cloneDoc: Document, url: string): any {
 
@@ -580,6 +628,19 @@ export class ContentCapture {
 
 }
 
+/**
+ * Generate IDs used for different internal content capture purposes
+ */
+export class IDGenerator {
+
+    private static id: number = 0;
+
+    public static generate() {
+        return this.id++;
+    }
+
+}
+
 console.log("Content capture script loaded within: " + window.location.href);
 
 declare var global: any;
@@ -595,3 +656,4 @@ process.once('loaded', () => {
     console.log("Re-defining ContentCapture");
     global.ContentCapture = ContentCapture;
 });
+

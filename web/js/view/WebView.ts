@@ -1,4 +1,4 @@
-import {Model} from '../model/Model';
+import {DocumentLoadedEvent, Model} from '../model/Model';
 import {View} from './View';
 import {DocFormatFactory} from '../docformat/DocFormatFactory';
 import {DocFormat} from '../docformat/DocFormat';
@@ -6,6 +6,9 @@ import {DocMetaDescriber} from '../metadata/DocMetaDescriber';
 import {forDict} from '../util/Functions';
 import {DocMeta} from '../metadata/DocMeta';
 import {Logger} from '../logger/Logger';
+import {PrefsProvider} from '../datastore/Datastore';
+import {ReadingProgressResume} from './ReadingProgressResume';
+import {RendererAnalytics} from '../ga/RendererAnalytics';
 
 const log = Logger.create();
 
@@ -13,23 +16,32 @@ export class WebView extends View {
 
     private readonly docFormat: DocFormat;
 
+    private readonly prefsProvider: PrefsProvider;
+
     /**
      *
-     * @param model {Model}
      */
-    constructor(model: Model) {
+    constructor(model: Model, prefsProvider: PrefsProvider) {
         super(model);
 
+        this.prefsProvider = prefsProvider;
         this.docFormat = DocFormatFactory.getInstance();
 
     }
 
     public start() {
 
-        this.model.registerListenerForDocumentLoaded(this.onDocumentLoaded.bind(this));
+        this.model.registerListenerForDocumentLoaded(event => this.onDocumentLoaded(event));
+
+        this.createTimer();
 
         return this;
 
+    }
+
+    private createTimer() {
+        const documentLoadTimer = RendererAnalytics.createTimer('document', 'loaded');
+        this.model.registerListenerForDocumentLoaded(event => documentLoadTimer.stop());
     }
 
     /**
@@ -44,7 +56,14 @@ export class WebView extends View {
 
         log.info("Percentage is now: " + perc);
 
+        const headerElement = <HTMLElement> document.querySelector("#polar-header");
+
+        if (headerElement) {
+            headerElement.style.display = 'block';
+        }
+
         const progressElement = <HTMLProgressElement> document.querySelector("#polar-progress progress");
+
         progressElement.value = perc;
 
         // now update the description of the doc at the bottom.
@@ -62,7 +81,7 @@ export class WebView extends View {
     /**
      * @deprecated Moved to pagemark.ProgressView... remove this code.
      */
-    computeProgress(docMeta: DocMeta) {
+    private computeProgress(docMeta: DocMeta) {
 
         // I think this is an issue of being async maybel?
 
@@ -86,13 +105,34 @@ export class WebView extends View {
     /**
      * Setup a document once we detect that a new one has been loaded.
      */
-    onDocumentLoaded() {
+    private onDocumentLoaded(event: DocumentLoadedEvent) {
 
-        log.info("WebView.onDocumentLoaded: ", this.model.docMeta);
+        const autoResume
+            = this.prefsProvider.get().isMarked('settings-auto-resume', true);
+
+        const docMeta = event.docMeta;
+
+        log.info("WebView.onDocumentLoaded: ", docMeta);
 
         this.updateProgress();
+        this.handleProgressDoubleClick(docMeta);
+
+        if (autoResume) {
+            ReadingProgressResume.resume(docMeta);
+        }
+
+    }
+
+    private handleProgressDoubleClick(docMeta: DocMeta) {
+
+        document.querySelector("#polar-header")!.addEventListener('dblclick', () => {
+
+            ReadingProgressResume.resume(docMeta);
+
+        });
 
     }
 
 }
+
 

@@ -19,6 +19,8 @@ import {DocMetaSupplierCollection} from '../../../../metadata/DocMetaSupplierCol
 import {Sets} from '../../../../util/Sets';
 import {FlashcardDescriptor} from './FlashcardDescriptor';
 import {FlashcardDescriptors} from './FlashcardDescriptors';
+import {AnkiConnectFetch} from './AnkiConnectFetch';
+import {Decks} from './Decks';
 
 /**
  * Sync engine for Anki.  Takes cards registered in a DocMeta and then transfers
@@ -31,6 +33,9 @@ export class AnkiSyncEngine implements SyncEngine {
     public async sync(docMetaSupplierCollection: DocMetaSupplierCollection,
                       progress: SyncProgressListener,
                       deckNameStrategy: DeckNameStrategy = 'default'): Promise<PendingSyncJob> {
+
+        // determine how to connect to Anki
+        await AnkiConnectFetch.initialize();
 
         const noteDescriptors = await this.toNoteDescriptors(deckNameStrategy, docMetaSupplierCollection);
 
@@ -85,11 +90,7 @@ export class AnkiSyncEngine implements SyncEngine {
 
     protected computeDeckName(deckNameStrategy: DeckNameStrategy, docInfo: DocInfo): string {
 
-        if (deckNameStrategy === 'default') {
-            return "Default";
-        }
-
-        let deckName;
+        let deckName: string | undefined;
 
         const tags = docInfo.tags;
 
@@ -102,13 +103,18 @@ export class AnkiSyncEngine implements SyncEngine {
                 .map(tag => Tags.parseTypedTag(tag.label))
                 .filter(typedTag => typedTag.isPresent())
                 .map(typedTag => typedTag.get())
-                .map(typedTag => typedTag.value)
+                .map(typedTag => Decks.toSubDeck(typedTag.value))
                 .pop();
-
         }
 
         if (! deckName) {
+
+            if (deckNameStrategy === 'default') {
+                return "Default";
+            }
+
             deckName = DocInfos.bestTitle(docInfo);
+
         }
 
         return deckName;

@@ -11,6 +11,7 @@ import {PageMetas} from './PageMetas';
 import {forDict} from '../util/Functions';
 import {TextHighlights} from './TextHighlights';
 import {Preconditions} from '../Preconditions';
+import {Errors} from '../util/Errors';
 
 const log = Logger.create();
 
@@ -60,8 +61,20 @@ export class DocMetas {
         return MockDocMetas.createMockDocMeta();
     }
 
-    /**
-     */
+    public static getPageMeta(docMeta: DocMeta, num: number) {
+
+        num = Preconditions.assertPresent(num, "num");
+
+        const pageMeta = docMeta.pageMetas[num];
+
+        if (!pageMeta) {
+            throw new Error("No pageMeta for page: " + num);
+        }
+
+        return pageMeta;
+
+    }
+
     public static addPagemarks(docMeta: DocMeta, options: any) {
 
         if (!options) {
@@ -104,7 +117,7 @@ export class DocMetas {
 
     /**
      */
-    public static deserialize(data: string): DocMeta {
+    public static deserialize(data: string, fingerprint: string): DocMeta {
 
         Preconditions.assertPresent(data, 'data');
 
@@ -114,45 +127,41 @@ export class DocMetas {
 
         let docMeta: DocMeta = Object.create(DocMeta.prototype);
 
-        docMeta = MetadataSerializer.deserialize(docMeta, data);
+        try {
 
-        if (docMeta.docInfo && ! docMeta.docInfo.filename) {
-            log.warn("DocMeta has no filename: " + docMeta.docInfo.fingerprint);
+            docMeta = MetadataSerializer.deserialize(docMeta, data);
+
+            if (docMeta.docInfo && !docMeta.docInfo.filename) {
+                // log.warn("DocMeta has no filename: " + docMeta.docInfo.fingerprint);
+            }
+
+            return DocMetas.upgrade(docMeta);
+
+        } catch (e) {
+            throw Errors.rethrow(e, "Unable to deserialize doc: " + fingerprint);
         }
-
-        return DocMetas.upgrade(docMeta);
 
     }
 
     public static upgrade(docMeta: DocMeta) {
 
-        // validate the JSON data and set defaults. In the future we should migrate
-        // to using something like AJV to provide these defaults and also perform
-        // type assertion.
+        // validate the JSON data and set defaults. In the future we should
+        // migrate to using something like AJV to provide these defaults and
+        // also perform type assertion.
 
         docMeta.pageMetas = PageMetas.upgrade(docMeta.pageMetas);
 
-        // TODO: go through and upgrade the pagemarks. I should probably have
-        // an upgrade function for each object type...
-
         if (!docMeta.annotationInfo) {
-            log.debug("No annotation info.. Adding default.");
+            // log.debug("No annotation info.. Adding default.");
             docMeta.annotationInfo = AnnotationInfos.create();
         }
 
         if (!docMeta.attachments) {
-            log.debug("No attachments. Adding empty map.");
+            // log.debug("No attachments. Adding empty map.");
             docMeta.attachments = {};
         }
 
-        if (docMeta.docInfo) {
-
-            if (!docMeta.docInfo.pagemarkType) {
-                log.debug("DocInfo has no pagemarkType... Adding default of SINGLE_COLUMN");
-                docMeta.docInfo.pagemarkType = PagemarkType.SINGLE_COLUMN;
-            }
-
-        }
+        docMeta.docInfo = DocInfos.upgrade(docMeta.docInfo);
 
         return docMeta;
 
@@ -183,7 +192,8 @@ export class DocMetas {
      * Make changes to the document so that they write as one batched mutation
      * at the end.
      *
-     * @param mutator
+     * @param mutator  The function to execute which will mutation the
+     * underlying DocMeta properly.
      */
     public static withBatchedMutations(docMeta: DocMeta, mutator: () => void) {
 

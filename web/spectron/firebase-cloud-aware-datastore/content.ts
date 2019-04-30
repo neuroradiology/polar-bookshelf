@@ -12,7 +12,7 @@ import {Firestore} from '../../js/firebase/Firestore';
 import {Hashcodes} from '../../js/Hashcodes';
 import {Promises} from '../../js/util/Promises';
 import {FirebaseDatastore} from '../../js/datastore/FirebaseDatastore';
-import {DocLoader} from '../../js/apps/main/ipc/DocLoader';
+import {ElectronDocLoader} from '../../js/apps/main/doc_loaders/electron/ElectronDocLoader';
 import {FirebaseRunner} from '../../js/firebase/FirebaseRunner';
 import {CloudAwareDatastore} from '../../js/datastore/CloudAwareDatastore';
 import {FilePaths} from '../../js/util/FilePaths';
@@ -167,7 +167,6 @@ SpectronRenderer.run(async (state) => {
             it("Test9: Sync with extra files in the firebase store", async function() {
 
                 const datastore = new FirebaseDatastore();
-                datastore.enablePersistence = false;
                 await datastore.init();
 
                 await datastore.writeDocMeta(MockDocMetas.createMockDocMeta('0x0004'));
@@ -191,7 +190,7 @@ SpectronRenderer.run(async (state) => {
 
                 await persistenceLayer.init();
 
-                const docMetaFiles = await persistenceLayer.getDocMetaFiles();
+                const docMetaFiles = await persistenceLayer.getDocMetaRefs();
                 assert.equal(docMetaFiles.length, 0);
 
                 persistenceLayer.stop();
@@ -320,7 +319,7 @@ SpectronRenderer.run(async (state) => {
                 datastoreMutation.written.get().then(() => writtenDuration = Date.now() - before);
                 datastoreMutation.committed.get().then(() => committedDuration = Date.now() - before);
 
-                await persistenceLayer.write(fingerprint, docMeta, datastoreMutation);
+                await persistenceLayer.write(fingerprint, docMeta, {datastoreMutation});
 
                 console.log(`writtenDuration: ${writtenDuration}, committedDuration: ${committedDuration}`);
 
@@ -368,7 +367,7 @@ SpectronRenderer.run(async (state) => {
 
                 await Datastores.purge(targetPersistenceLayer.datastore);
 
-                const docMetaFiles = await targetPersistenceLayer.getDocMetaFiles();
+                const docMetaFiles = await targetPersistenceLayer.getDocMetaRefs();
                 assert.equal(docMetaFiles.length, 0);
 
                 let gotEventAfterUnsubscribe = false;

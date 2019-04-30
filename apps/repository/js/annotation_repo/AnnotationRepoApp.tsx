@@ -8,11 +8,17 @@ import {SyncBarProgress} from '../../../../web/js/ui/sync_bar/SyncBar';
 import {IEventDispatcher} from '../../../../web/js/reactor/SimpleReactor';
 import {PersistenceLayerManager} from '../../../../web/js/datastore/PersistenceLayerManager';
 import AnnotationRepoTable from './AnnotationRepoTable';
-import {Footer, Tips} from '../Utils';
-import {RepoHeader} from '../RepoHeader';
+import {RepoHeader} from '../repo_header/RepoHeader';
 import {MessageBanner} from '../MessageBanner';
 import {RepoAnnotation} from '../RepoAnnotation';
 import {RepoAnnotationMetaView} from './RepoAnnotationMetaView';
+import {FixedNav, FixedNavBody} from '../FixedNav';
+import {AddContentButton} from '../ui/AddContentButton';
+import {AnnotationRepoFilterBar} from './AnnotationRepoFilterBar';
+import {AddContentActions} from '../ui/AddContentActions';
+import {ChannelFunction, Channels} from '../../../../web/js/util/Channels';
+import {ChannelCoupler} from '../../../../web/js/util/Channels';
+import {AnnotationRepoFilters} from './AnnotationRepoFiltersHandler';
 
 const log = Logger.create();
 
@@ -26,12 +32,19 @@ export default class AnnotationRepoApp extends React.Component<IProps, IState> {
 
     private readonly filteredTags = new FilteredTags();
 
+    private readonly filterChannel: ChannelFunction<AnnotationRepoFilters>;
+
+    private readonly setFilterChannel: ChannelCoupler<AnnotationRepoFilters>;
+
     constructor(props: IProps, context: any) {
         super(props, context);
 
         this.persistenceLayerManager = this.props.persistenceLayerManager;
         this.docRepository = new RepoDocMetaManager(this.persistenceLayerManager);
         this.repoDocInfoLoader = new RepoDocMetaLoader(this.persistenceLayerManager);
+
+        [this.filterChannel, this.setFilterChannel]
+            = Channels.create<AnnotationRepoFilters>();
 
         this.state = {
         };
@@ -42,25 +55,67 @@ export default class AnnotationRepoApp extends React.Component<IProps, IState> {
 
         return (
 
-            <div id="doc-repository">
+            <FixedNav id="doc-repository" className="annotations-view">
 
-                <RepoHeader persistenceLayerManager={this.props.persistenceLayerManager}/>
+                <header>
+                    <RepoHeader persistenceLayerManager={this.props.persistenceLayerManager}/>
 
-                <MessageBanner/>
+                    <div id="header-filter" className="mt-1">
 
-                <div style={{display: 'flex'}}>
+                        <div style={{display: 'flex'}}>
 
-                    <div style={{width: 'calc(100% - 350px)'}}>
+                            <div className=""
+                                 style={{
+                                     whiteSpace: 'nowrap',
+                                     marginTop: 'auto',
+                                     marginBottom: 'auto',
+                                     display: 'flex'
+                                 }}>
 
-                        <AnnotationRepoTable persistenceLayerManager={this.props.persistenceLayerManager}
-                                             updatedDocInfoEventDispatcher={this.props.updatedDocInfoEventDispatcher}
-                                             repoDocMetaManager={this.props.repoDocMetaManager}
-                                             repoDocMetaLoader={this.props.repoDocMetaLoader}
-                                             onSelected={repoAnnotation => this.onRepoAnnotationSelected(repoAnnotation)}/>
+                                <AddContentButton importFromDisk={() => AddContentActions.cmdImportFromDisk()}
+                                                  captureWebPage={() => AddContentActions.cmdCaptureWebPage()}/>
+
+                            </div>
+
+                            <div style={{marginLeft: 'auto'}}>
+
+                                <AnnotationRepoFilterBar tagsDBProvider={() => this.props.repoDocMetaManager!.tagsDB}
+                                                         onFiltered={filters => this.filterChannel(filters)}
+                                                         right={
+                                                             <div/>
+                                                          }
+                                />
+
+                            </div>
+
+                        </div>
 
                     </div>
 
-                    <div className="mt-2" style={{width: '350px'}}>
+                    <MessageBanner/>
+
+                </header>
+
+                <div style={{display: 'flex'}}>
+
+                    <div className="ml-1"
+                         style={{width: 'calc(100% - 350px)'}}>
+
+                        <FixedNavBody>
+
+                            <AnnotationRepoTable persistenceLayerManager={this.props.persistenceLayerManager}
+                                                 updatedDocInfoEventDispatcher={this.props.updatedDocInfoEventDispatcher}
+                                                 repoDocMetaManager={this.props.repoDocMetaManager}
+                                                 repoDocMetaLoader={this.props.repoDocMetaLoader}
+                                                 setFiltered={this.setFilterChannel}
+                                                 onSelected={repoAnnotation => this.onRepoAnnotationSelected(repoAnnotation)}/>
+
+                        </FixedNavBody>
+
+                    </div>
+
+                    <div className="mt-2 pl-1 pr-1"
+                         style={{width: '350px'}}>
                         <RepoAnnotationMetaView persistenceLayerManager={this.props.persistenceLayerManager}
                                                 repoAnnotation={this.state.repoAnnotation}/>
                     </div>
@@ -68,11 +123,7 @@ export default class AnnotationRepoApp extends React.Component<IProps, IState> {
 
                 </div>
 
-                <br />
-                <Tips />
-                <Footer/>
-
-            </div>
+            </FixedNav>
 
         );
     }
@@ -104,3 +155,4 @@ export interface IState {
     readonly repoAnnotation?: RepoAnnotation;
 
 }
+
