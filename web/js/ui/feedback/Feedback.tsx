@@ -1,9 +1,10 @@
 import * as React from 'react';
-import Button from 'reactstrap/lib/Button';
-import {RendererAnalytics} from '../../ga/RendererAnalytics';
 import {LeftRightSplit} from '../left_right_split/LeftRightSplit';
 import {Nav} from '../util/Nav';
 import {SURVEY_LINK} from '../../../../apps/repository/js/splash/splashes/survey/Survey';
+import {MessageBox} from "../util/MessageBox";
+import {Analytics} from "../../analytics/Analytics";
+import Button from '@material-ui/core/Button';
 
 export class Feedback extends React.Component<IProps, IState> {
 
@@ -41,11 +42,13 @@ export class Feedback extends React.Component<IProps, IState> {
 
             if (this.props.unsure) {
                 return <div>
-                    <Button size='sm'
-                            onClick={() => this.onUnsure()}>Not sure yet</Button>
+                    <Button variant="contained"
+                            onClick={() => this.onUnsure()}>
+                        Not sure yet
+                    </Button>
                 </div>;
             } else {
-                return <div></div>;
+                return null;
             }
 
         };
@@ -58,9 +61,7 @@ export class Feedback extends React.Component<IProps, IState> {
                 background = '#D8D8D8';
             }
 
-            return <Button size='sm'
-                           className="text-dark"
-                           block={true}
+            return <Button variant="contained"
                            disabled={this.state.completed}
                            style={{
                                width: '2.5em',
@@ -153,14 +154,7 @@ export class Feedback extends React.Component<IProps, IState> {
 
         const FeedbackForm = () => {
 
-            return <div style={{
-                width: '600px',
-                position: 'fixed',
-                right: 25,
-                bottom: 25,
-                zIndex: 9999,
-            }}
-                        className="border rounded shadow bg-white p-3">
+            return <MessageBox>
 
                 <h3 className="text-center">{this.props.title}</h3>
 
@@ -171,12 +165,15 @@ export class Feedback extends React.Component<IProps, IState> {
                 <ButtonTable/>
 
                 <div className="text-center mt-2">
-                    <Button color="link" size="sm" onClick={() => this.takeExtendedSurvey()}>Take Extended Survey</Button>
+                    <Button variant="contained"
+                            onClick={() => this.takeExtendedSurvey()}>
+                        Take Extended Survey
+                    </Button>
                 </div>
 
                 {this.props.footer}
 
-            </div>;
+            </MessageBox>;
 
         };
 
@@ -192,11 +189,10 @@ export class Feedback extends React.Component<IProps, IState> {
 
         if (! this.props.noEvent) {
 
-            RendererAnalytics.event({
-                                        category: this.props.category,
-                                        action: `${rating}`,
-                                        value: rating
-                                    });
+            Analytics.event({
+                category: this.props.category,
+                action: `${rating}`,
+            });
 
             console.log(`Sent feedback for category ${this.props.category}: ${rating}`);
 
@@ -221,10 +217,10 @@ export class Feedback extends React.Component<IProps, IState> {
 
         if (! this.props.noEvent) {
 
-            RendererAnalytics.event({
-                                        category: this.props.category,
-                                        action: `unsure`,
-                                    });
+            Analytics.event({
+                category: this.props.category,
+                action: `unsure`,
+            });
 
             console.log(`Sent unsure feedback for category ${this.props.category}`);
 
@@ -237,8 +233,8 @@ export class Feedback extends React.Component<IProps, IState> {
     private markCompleted() {
 
         this.setState({
-                          completed: true
-                      });
+            completed: true
+        });
 
     }
 

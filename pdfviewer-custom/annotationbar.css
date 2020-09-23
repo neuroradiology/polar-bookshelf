@@ -1,11 +1,9 @@
 
 .annotationbar * {
-    font-size: 14px !important;
+    font-size: 14px;
 }
 
 .annotationbar {
-    background-color: #333333;
-    width: 150px;
 }
 
 .annotationbar-btn:hover,

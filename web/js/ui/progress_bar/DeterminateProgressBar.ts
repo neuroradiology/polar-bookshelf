@@ -1,13 +1,12 @@
-import {Progress} from '../../util/ProgressTracker';
-import {Logger} from '../../logger/Logger';
-import {Optional} from '../../util/ts/Optional';
-import {Preconditions} from '../../Preconditions';
+import {Progress} from 'polar-shared/src/util/ProgressTracker';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 
 const ID = 'polar-determinate-progress-bar';
 
 const log = Logger.create();
 
-const FAST_PROGRESS_CUTOFF = 300;
+const FAST_PROGRESS_CUTOFF = 100;
 
 /**
  * Simple progress bar that we can display at any time on a page without
@@ -22,8 +21,8 @@ export class DeterminateProgressBar {
         const progress: number =
             typeof value === 'number' ? value : value.progress;
 
-        if (! progress || progress < 0 || progress > 100) {
-            // this is an invalid value...
+        if (progress === null || progress === undefined || progress < 0 || progress > 100) {
+            console.warn("Invalid value: ", progress);
             return;
         }
 
@@ -41,6 +40,7 @@ export class DeterminateProgressBar {
             // it was processing which might happen sometimes if we're given
             // the last job.  Either way even if it's a programmers error there
             // is no need to update the UI here.
+
             return;
         }
 
@@ -48,6 +48,7 @@ export class DeterminateProgressBar {
         progressElement.value = progress;
 
         if (progress >= 100) {
+
             this.destroy();
         }
 
@@ -130,7 +131,8 @@ export class DeterminateProgressBar {
         element.style.borderRight = '0';
         element.style.borderBottom = '0';
         // element.style.webkitAppearance = 'none';
-        // element.style.borderRadius = '0';
+        element.style.padding = '0';
+        element.style.borderRadius = '0';
 
         document.body.appendChild(element);
 

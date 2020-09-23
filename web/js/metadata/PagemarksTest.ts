@@ -1,13 +1,13 @@
 import {assertJSON} from '../test/Assertions';
 import {Pagemarks} from "./Pagemarks";
 import {DocMetas} from "./DocMetas";
-import {TestingTime} from "../test/TestingTime";
+import {TestingTime} from "polar-shared/src/test/TestingTime";
 import {assert} from 'chai';
-import {DocMeta} from './DocMeta';
-import {ISODateTimeStrings} from './ISODateTimeStrings';
-import {Objects} from '../util/Objects';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
 import {ReadingProgresses} from './ReadingProgresses';
-import {PagemarkMode} from './PagemarkMode';
+import {PagemarkMode} from 'polar-shared/src/metadata/PagemarkMode';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {Objects} from "polar-shared/src/util/Objects";
 
 
 function reset() {
@@ -25,6 +25,54 @@ describe('Pagemarks', function() {
             reset();
         });
 
+        it("less than zero", function() {
+
+            // we had a test that was breaking when less than one
+
+            const docMeta = DocMetas.create('0x0001', 1);
+
+            const pageMeta = DocMetas.getPageMeta(docMeta, 1);
+
+            assertJSON(pageMeta.readingProgress, {});
+
+            Pagemarks.updatePagemarksForRange(docMeta, 1, 0.999);
+
+            const expected = [
+                {
+                    "id": "1s2gw2Mkwb",
+                    "guid": "1s2gw2Mkwb",
+                    "created": "2012-03-02T11:38:49.321Z",
+                    "lastUpdated": "2012-03-02T11:38:49.321Z",
+                    "type": "SINGLE_COLUMN",
+                    "percentage": 1,
+                    "column": 0,
+                    "rect": {
+                        "left": 0,
+                        "top": 0,
+                        "width": 100,
+                        "height": 0.999
+                    },
+                    "batch": "1Y9CcEHSxc",
+                    "mode": "READ",
+                    "notes": {}
+                }
+            ];
+
+            assertJSON(Object.values(pageMeta.pagemarks), expected);
+
+            assertJSON(pageMeta.readingProgress, {
+                "1AS9DE87jw": {
+                    "created": "2012-03-02T11:38:49.321Z",
+                    "id": "1AS9DE87jw",
+                    "progress": 1,
+                    "progressByMode": {
+                        "READ": 1
+                    }
+                }
+            });
+
+        });
+
         it("for one page", function() {
 
             const docMeta = DocMetas.create('0x0001', 1);
@@ -38,6 +86,7 @@ describe('Pagemarks', function() {
             const expected = [
                 {
                     "id": "1s2gw2Mkwb",
+                    "guid": "1s2gw2Mkwb",
                     "created": "2012-03-02T11:38:49.321Z",
                     "lastUpdated": "2012-03-02T11:38:49.321Z",
                     "type": "SINGLE_COLUMN",
@@ -79,6 +128,7 @@ describe('Pagemarks', function() {
             const pagemark1 = [
                 {
                     "id": "1s2gw2Mkwb",
+                    "guid": "1s2gw2Mkwb",
                     "created": "2012-03-02T11:38:49.321Z",
                     "lastUpdated": "2012-03-02T11:38:49.321Z",
                     "type": "SINGLE_COLUMN",
@@ -92,13 +142,14 @@ describe('Pagemarks', function() {
                     },
                     "batch": "1Y9CcEHSxc",
                     "mode": "READ",
-                    "notes": {},
+                    "notes": {}
                 }
             ];
 
             const pagemark2 = [
                     {
                         "id": "126nS8PMqF",
+                        "guid": "126nS8PMqF",
                         "created": "2012-03-02T11:38:49.321Z",
                         "lastUpdated": "2012-03-02T11:38:49.321Z",
                         "type": "SINGLE_COLUMN",
@@ -266,6 +317,7 @@ describe('Pagemarks', function() {
                     "batch": "1Y9CcEHSxc",
                     "column": 0,
                     "created": "2012-03-02T11:38:49.321Z",
+                    "guid": "1s2gw2Mkwb",
                     "id": "1s2gw2Mkwb",
                     "lastUpdated": "2012-03-02T11:38:49.321Z",
                     "mode": "PRE_READ",
@@ -286,6 +338,7 @@ describe('Pagemarks', function() {
                     "batch": "1Y9CcEHSxc",
                     "column": 0,
                     "created": "2012-03-02T11:38:49.321Z",
+                    "guid": "12CDjpvoCY",
                     "id": "12CDjpvoCY",
                     "lastUpdated": "2012-03-02T11:38:49.321Z",
                     "mode": "PRE_READ",
@@ -363,6 +416,7 @@ describe('Pagemarks', function() {
                     "batch": "1SDFF4T2Rj",
                     "column": 0,
                     "created": "2012-03-09T11:38:49.321Z",
+                    "guid": "12mskuuTzp",
                     "id": "12mskuuTzp",
                     "lastUpdated": "2012-03-09T11:38:49.321Z",
                     "mode": "READ",
@@ -380,6 +434,7 @@ describe('Pagemarks', function() {
                     "batch": "1Y9CcEHSxc",
                     "column": 0,
                     "created": "2012-03-02T11:38:49.321Z",
+                    "guid": "1s2gw2Mkwb",
                     "id": "1s2gw2Mkwb",
                     "lastUpdated": "2012-03-02T11:38:49.321Z",
                     "mode": "READ",
@@ -468,7 +523,7 @@ describe('Pagemarks', function() {
 });
 
 
-const assertPagemark = (docMeta: DocMeta, pageNum: number, batch: string) => {
+const assertPagemark = (docMeta: IDocMeta, pageNum: number, batch: string) => {
 
     const pagemarks = Object.values(DocMetas.getPageMeta(docMeta, pageNum).pagemarks);
 

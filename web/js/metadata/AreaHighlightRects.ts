@@ -1,9 +1,10 @@
 import {Rect} from "../Rect";
 import {AreaHighlightRect} from "./AreaHighlightRect";
+import {IRect} from 'polar-shared/src/util/rects/IRect';
 
 export class AreaHighlightRects {
 
-    static createFromRect(rect: Rect) {
+    public static createFromRect(rect: Rect | IRect) {
 
         return new AreaHighlightRect({
             left: rect.left,

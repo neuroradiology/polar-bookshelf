@@ -1,77 +1,106 @@
 import {Elements} from '../util/Elements';
-import {DocFormatFactory} from '../docformat/DocFormatFactory';
-import {DocMeta} from '../metadata/DocMeta';
-import {Pagemark} from '../metadata/Pagemark';
 import {Rects} from '../Rects';
-import {Reducers} from '../util/Reducers';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {useDocViewerStore} from "../../../apps/doc/src/DocViewerStore";
+import {IPagemarkRef} from "polar-shared/src/metadata/IPagemarkRef";
+import {useJumpToAnnotationHandler} from "../annotation_sidebar/JumpToAnnotationHook";
+import {Callback} from "polar-shared/src/util/Functions";
 
-export class ReadingProgressResume {
+export namespace ReadingProgressResume {
 
-    public static resume(docMeta: DocMeta) {
-        setTimeout(() => this.doResume(docMeta), 1);
+    export interface ResumeOpts {
+        readonly docMeta: IDocMeta;
+        // readonly onPageJump: (pageNum: number) => void;
     }
 
-    private static doResume(docMeta: DocMeta) {
+    export function useReadingProgressResume(): [boolean, Callback] {
 
-        const targetPagemark = this.computeTargetPagemark(docMeta);
+        const {docMeta} = useDocViewerStore(['docMeta']);
+        const jumpToAnnotationHandler = useJumpToAnnotationHandler();
+
+        const targetPagemark = computeTargetPagemark(docMeta);
+
+        const active = targetPagemark !== undefined;
+
+        const handler = () => {
+
+            if (! docMeta) {
+                console.warn("Progress can not resume (no docMeta)");
+                return;
+            }
+
+            if (! targetPagemark) {
+                console.warn("Progress can not resume (no targetPagemark)");
+                return;
+            }
+
+            jumpToAnnotationHandler({
+                target: targetPagemark.pagemark.id,
+                pageNum: targetPagemark.pageNum,
+                docID: docMeta.docInfo.fingerprint,
+                pos: 'bottom'
+            });
+
+        }
+
+        return [active, handler];
+
+    }
+
+    export function resume(opts: ResumeOpts): boolean {
+        // setTimeout(() => doResume(opts), 1);
+        return doResume(opts);
+    }
+
+    function doResume(opts: ResumeOpts): boolean {
+
+        const {docMeta} = opts;
+
+        const targetPagemark = computeTargetPagemark(docMeta);
 
         if (! targetPagemark) {
             return false;
         }
 
+        scrollToPagemark(targetPagemark);
+
+        return true;
+
+    }
+
+    function scrollToPagemark(targetPagemark: IPagemarkRef, ) {
+
+        // TODO: this has to be rewritten as a hook so that we can jump to the
+        // page properly and that the toolbar has the right page.
+
+        // TODO: the 'next' button doesn't work when we jump to a page after load
+        // as I think the current page number isn't changed.
+
+
+        // TODO: this is wrong...
+        // TODO: i think I need to implement this with 'target' and then
+        // implement that in pagemarks too...  including the useWindowScroll and
+        // useWindowCallback...
         const pages = document.querySelectorAll(".page");
 
         const pageNum = targetPagemark.pageNum;
 
         const pageElement = <HTMLElement> pages[pageNum - 1];
 
-        const scrollParent = this.getScrollParent(pageElement);
+        const scrollParent = getScrollParent(pageElement);
+
+        if (! pageElement) {
+            return;
+        }
 
         const pageOffset = Elements.getRelativeOffsetRect(pageElement, scrollParent);
 
         const pageTop = pageOffset.top;
         const pageHeight = Math.floor(pageElement.clientHeight);
 
-        const computePagemarkHeight = (): number => {
-
-            const docFormat = DocFormatFactory.getInstance();
-
-            if (docFormat.name === 'pdf') {
-
-                const pagemarkBottom
-                    = Math.floor(Rects.createFromBasicRect(targetPagemark.pagemark.rect).bottom);
-
-                const pagemarkBottomPerc = pagemarkBottom / 100;
-
-                return pageHeight * pagemarkBottomPerc;
-
-            } else {
-
-                const pagemarkElements
-                    = Array.from(pageElement.querySelectorAll(".pagemark"));
-
-                // TODO: should be by time and not by position.
-                const pagemarkElement =
-                    pagemarkElements.sort((a, b) => a.getBoundingClientRect().bottom - b.getBoundingClientRect().bottom)
-                        .reduce(Reducers.LAST);
-
-                if (pagemarkElement) {
-
-                    // in HTML mode or PDFs with smaller
-
-                    return pagemarkElement.clientHeight;
-
-                } else {
-                    throw new Error("No pagemarkElement");
-                }
-
-            }
-
-        };
-
         // now compute the height of the pagemark so that we scroll to that
         // point.
-        const pagemarkHeight = computePagemarkHeight();
+        const pagemarkHeight = computePagemarkHeight(targetPagemark, pageHeight);
 
         // but adjust it a bit so that the bottom portion of the pagemark is
         // visible by computing the height of the window and shifting it
@@ -81,42 +110,69 @@ export class ReadingProgressResume {
 
         scrollParent.scrollTop = newScrollTop;
 
-        return true;
+    }
+
+    function computePagemarkHeight(targetPagemark: IPagemarkRef,
+                                   pageHeight: number): number {
+
+            const pagemarkBottom
+                = Math.floor(Rects.createFromBasicRect(targetPagemark.pagemark.rect).bottom);
+
+            const pagemarkBottomPerc = pagemarkBottom / 100;
+
+            return pageHeight * pagemarkBottomPerc;
+
+
+        // if (opts.fileType === 'pdf') {
+        //
+        //     const pagemarkBottom
+        //         = Math.floor(Rects.createFromBasicRect(targetPagemark.pagemark.rect).bottom);
+        //
+        //     const pagemarkBottomPerc = pagemarkBottom / 100;
+        //
+        //     return pageHeight * pagemarkBottomPerc;
+        //
+        // } else {
+        //
+        //     // TODO: should be sorted by time and not by position.
+        //     const pagemarkElements
+        //         = Array.from(pageElement.querySelectorAll(".pagemark"))
+        //                .sort((a, b) => a.getBoundingClientRect().bottom - b.getBoundingClientRect().bottom);
+        //
+        //     const pagemarkElement = Arrays.last(pagemarkElements);
+        //
+        //     if (pagemarkElement) {
+        //
+        //         // in HTML mode or PDFs with smaller
+        //
+        //         return pagemarkElement.clientHeight;
+        //
+        //     } else {
+        //         throw new Error("No pagemarkElement");
+        //     }
+        //
+        // }
 
     }
 
-    private static pdfjsVersion() {
+    function getScrollParent(element: HTMLElement) {
 
-        const win = (<any> window);
+        // FIXME not portable /compatible with react
+        return <HTMLElement> document.querySelector("#viewerContainer");
 
-        if (win && win.pdfjsLib) {
-            return (win.pdfjsLib.version);
-        }
-
-        return undefined;
-
-    }
-
-    private static getScrollParent(element: HTMLElement) {
-
-        const docFormat = DocFormatFactory.getInstance();
-
-        if (docFormat.name === 'pdf') {
-            return <HTMLElement> document.querySelector("#viewerContainer");
-        }
-
-        if (docFormat.name === 'html') {
-            return <HTMLElement> document.querySelector(".polar-viewer");
-        }
-
-        return  <HTMLElement> Elements.getScrollParent(element);
+        // if (fileType === 'pdf') {
+        //     return <HTMLElement> document.querySelector("#viewerContainer");
+        // }
+        //
+        // return  <HTMLElement> Elements.getScrollParent(element);
 
     }
 
-    private static computePagemarks(docMeta: DocMeta) {
+    function computePagemarks(docMeta: IDocMeta): ReadonlyArray<IPagemarkRef> {
 
-        const result: PagemarkHolder[] = [];
+        const result: IPagemarkRef[] = [];
 
+        // TODO: this would be better with arrayStream now...
         for (const pageMeta of Object.values(docMeta.pageMetas)) {
 
             const pagemarks = Object.values(pageMeta.pagemarks || {});
@@ -137,17 +193,21 @@ export class ReadingProgressResume {
 
     }
 
-    private static computeTargetPagemark(docMeta: DocMeta): PagemarkHolder | undefined {
+    function computeTargetPagemark(docMeta: IDocMeta | undefined): IPagemarkRef | undefined {
 
-        const pagemarkHolders = this.computePagemarks(docMeta);
+        if (! docMeta) {
+            return undefined;
+        }
 
-        let result: PagemarkHolder | undefined;
+        const pagemarkHolders = computePagemarks(docMeta);
+
+        let result: IPagemarkRef | undefined;
 
         /**
          * Compare two pagemarks and return the one that is farthest down the
          * page.
          */
-        const comparePagemarks = (p0: PagemarkHolder | undefined, p1: PagemarkHolder) => {
+        const comparePagemarks = (p0: IPagemarkRef | undefined, p1: IPagemarkRef) => {
 
             if (!p0) {
                 return p1;
@@ -184,13 +244,3 @@ export class ReadingProgressResume {
     }
 
 }
-
-interface TargetPagemark {
-    readonly pageNum: number;
-}
-
-interface PagemarkHolder {
-    readonly pageNum: number;
-    readonly pagemark: Pagemark;
-}
-

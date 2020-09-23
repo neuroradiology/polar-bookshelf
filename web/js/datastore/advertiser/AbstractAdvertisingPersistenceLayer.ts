@@ -2,26 +2,42 @@ import {ListenablePersistenceLayer} from '../ListenablePersistenceLayer';
 import {SimpleReactor} from '../../reactor/SimpleReactor';
 import {PersistenceLayerEvent} from '../PersistenceLayerEvent';
 import {PersistenceLayerListener} from '../PersistenceLayerListener';
-import {PersistenceLayer, PersistenceLayerID} from '../PersistenceLayer';
+import {
+    AbstractPersistenceLayer,
+    PersistenceLayer,
+    PersistenceLayerID
+} from '../PersistenceLayer';
 import {DocMeta} from '../../metadata/DocMeta';
 import {DocMetaFileRef, DocMetaRef} from '../DocMetaRef';
-import {BinaryFileData, Datastore, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileRef, SnapshotResult} from '../Datastore';
+import {
+    BinaryFileData,
+    Datastore,
+    DeleteResult,
+    DocMetaSnapshotEventListener,
+    DocMetaSnapshotOpts, DocMetaSnapshotResult,
+    ErrorListener,
+    SnapshotResult
+} from '../Datastore';
 import {WriteFileOpts} from '../Datastore';
-import {GetFileOpts} from '../Datastore';
 import {DatastoreOverview} from '../Datastore';
 import {DatastoreCapabilities} from '../Datastore';
 import {DatastoreInitOpts} from '../Datastore';
 import {PersistenceEventType} from '../PersistenceEventType';
-import {Backend} from '../Backend';
-import {DocFileMeta} from '../DocFileMeta';
-import {Optional} from '../../util/ts/Optional';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {DocInfo} from '../../metadata/DocInfo';
 import {DatastoreMutation} from '../DatastoreMutation';
-import {NULL_FUNCTION} from '../../util/Functions';
+import {NULL_FUNCTION} from 'polar-shared/src/util/Functions';
 import {Releaseable} from '../../reactor/EventListener';
 import {WriteOpts} from '../PersistenceLayer';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {UserTagsDB} from "../UserTagsDB";
+import {GetFileOpts} from "polar-shared/src/datastore/IDatastore";
 
-export abstract class AbstractAdvertisingPersistenceLayer implements ListenablePersistenceLayer {
+export abstract class AbstractAdvertisingPersistenceLayer extends AbstractPersistenceLayer implements ListenablePersistenceLayer {
 
     public abstract readonly id: PersistenceLayerID;
 
@@ -35,6 +51,7 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
     public readonly delegate: PersistenceLayer;
 
     protected constructor(delegate: PersistenceLayer) {
+        super();
         this.datastore = delegate.datastore;
         this.delegate = delegate;
     }
@@ -47,13 +64,64 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
         return this.delegate.stop();
     }
 
+    public async getDocMetaSnapshot(opts: DocMetaSnapshotOpts<IDocMeta>): Promise<DocMetaSnapshotResult> {
+
+        if (this.datastore.capabilities().snapshots) {
+            // for firebase/cloud so we would just rely on these events
+            return super.getDocMetaSnapshot(opts);
+        }
+
+        const handleCurr = async (unsubscriber: () => void) => {
+
+            const onError = opts.onError || NULL_FUNCTION;
+
+            try {
+                const data = await this.getDocMeta(opts.fingerprint);
+                opts.onSnapshot({
+                    data,
+                    source: 'server',
+                    hasPendingWrites: false,
+                    unsubscriber
+                });
+
+            } catch (e) {
+                onError(e);
+            }
+
+        }
+
+        const handleNext = () => {
+
+            const releasable = this.addEventListenerForDoc(opts.fingerprint, event => {
+
+                opts.onSnapshot({
+                    data: event.docMeta,
+                    source: 'server',
+                    hasPendingWrites: false,
+                    unsubscriber: () => releasable.release()
+                });
+
+            });
+
+            return {
+                unsubscriber: () => releasable.release()
+            };
+
+        }
+
+        const result = handleNext();
+        await handleCurr(result.unsubscriber);
+        return result;
+
+    }
+
     public addEventListener(listener: PersistenceLayerListener): Releaseable {
         return this.reactor.addEventListener(listener);
     }
 
-    public addEventListenerForDoc(fingerprint: string, listener: PersistenceLayerListener): void {
+    public addEventListenerForDoc(fingerprint: string, listener: PersistenceLayerListener): Releaseable {
 
-        this.addEventListener((event) => {
+        return this.addEventListener((event) => {
 
             if (fingerprint === event.docInfo.fingerprint) {
                 listener(event);
@@ -63,21 +131,21 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
 
     }
 
-    public async writeDocMeta(docMeta: DocMeta, datastoreMutation?: DatastoreMutation<DocInfo>): Promise<DocInfo> {
+    public async writeDocMeta(docMeta: IDocMeta, datastoreMutation?: DatastoreMutation<IDocInfo>): Promise<IDocInfo> {
 
         return await this.handleWrite(docMeta, async () => await this.delegate.writeDocMeta(docMeta, datastoreMutation));
 
     }
 
     public async write(fingerprint: string,
-                       docMeta: DocMeta,
-                       opts?: WriteOpts): Promise<DocInfo> {
+                       docMeta: IDocMeta,
+                       opts?: WriteOpts): Promise<IDocInfo> {
 
         return await this.handleWrite(docMeta, async () => await this.delegate.write(fingerprint, docMeta, opts));
 
     }
 
-    private async handleWrite(docMeta: DocMeta, handler: () => Promise<DocInfo>) {
+    private async handleWrite(docMeta: IDocMeta, handler: () => Promise<IDocInfo>) {
 
         const docInfo = await handler();
 
@@ -86,6 +154,7 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
 
         this.broadcastEvent({
             docInfo,
+            docMeta,
             docMetaRef: {
                 fingerprint: docMeta.docInfo.fingerprint
             },
@@ -104,7 +173,7 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
         return this.delegate.contains(fingerprint);
     }
 
-    public getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
         return this.delegate.getDocMetaRefs();
     }
 
@@ -124,6 +193,7 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
         const result = this.delegate.delete(docMetaFileRef);
 
         this.broadcastEvent({
+            docMeta: undefined,
             docInfo: docMetaFileRef.docInfo,
             docMetaRef: {
                 fingerprint: docMetaFileRef.fingerprint
@@ -134,7 +204,7 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
         return result;
     }
 
-    public async getDocMeta(fingerprint: string): Promise<DocMeta | undefined> {
+    public async getDocMeta(fingerprint: string): Promise<IDocMeta| undefined> {
         return await this.delegate.getDocMeta(fingerprint);
     }
 
@@ -154,7 +224,11 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
         return this.delegate.containsFile(backend, ref);
     }
 
-    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
+    public deleteFile(backend: Backend, ref: FileRef): Promise<void> {
+        return this.datastore.deleteFile(backend, ref);
+    }
+
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): DocFileMeta {
         return this.delegate.getFile(backend, ref, opts);
     }
 
@@ -174,6 +248,10 @@ export abstract class AbstractAdvertisingPersistenceLayer implements ListenableP
 
     public async deactivate() {
         await this.delegate.deactivate();
+    }
+
+    public getUserTagsDB(): Promise<UserTagsDB> {
+        return this.delegate.getUserTagsDB();
     }
 
 }

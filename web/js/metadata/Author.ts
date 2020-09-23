@@ -1,19 +1,29 @@
 import {SerializedObject} from './SerializedObject';
+import {AuthorImage, IAuthor} from "polar-shared/src/metadata/IAuthor";
+import {ProfileIDStr} from "polar-firebase/src/firebase/om/Profiles";
 
-export class Author extends SerializedObject {
+export class Author extends SerializedObject implements IAuthor {
 
-    /**
-     * The name of this author.
-     */
-    public name: string = "";
+    public readonly name: string = "";
 
-    // TODO: include a link here and the name should not be optional.  If the
-    // author doesn't have a link metadata we're missing a major piece of
-    // metadata.
+    public readonly profileID: ProfileIDStr;
 
-    constructor(val: any) {
-        super(val);
+    public readonly url?: string;
 
+    public readonly image?: AuthorImage;
+
+    // TODO: I don't like this so we should find an alternative way to
+    // represent this....
+    public readonly guest?: boolean;
+
+    constructor(val: IAuthor) {
+        super(<any> val);
+        this.name = val.name;
+        this.profileID = val.profileID;
+        this.url = val.url;
+        this.image = val.image;
+        this.guest = val.guest;
     }
 
 }
+

@@ -1,6 +1,8 @@
-import {BrowserWindow, nativeImage, shell, DownloadItem, WebContents, screen} from "electron";
-import {Logger} from '../../logger/Logger';
+import {BrowserWindow, screen, shell} from "electron";
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {ResourcePaths} from '../../electron/webresource/ResourcePaths';
+import {ElectronUserAgents} from "../electron_browser/ElectronUserAgents";
+import {ExternalNavigationBlock} from "../../electron/navigation/ExternalNavigationBlock";
 
 const log = Logger.create();
 
@@ -8,7 +10,9 @@ const WIDTH = 900 * 1.2; // 1300 is like 80% of users
 const HEIGHT = 1100 * 1.2;
 const SIDEBAR_BUFFER = 100;
 
-const DEFAULT_URL = ResourcePaths.resourceURLFromRelativeURL('./apps/home/default.html');
+const DEFAULT_URL = ResourcePaths.resourceURLFromRelativeURL('./apps/repository/index.html');
+
+export const MAIN_SESSION_PARTITION_NAME = 'persist:polar-app';
 
 // TODO: files in the root are always kept in the package we can just load
 // this as a native_image directly.
@@ -23,6 +27,8 @@ export const BROWSER_WINDOW_OPTIONS: Electron.BrowserWindowConstructorOptions = 
 
     // TODO: the AppIcon CAN be a file URL
     icon: APP_ICON,
+    // frame: false,
+    // titleBarStyle: 'hiddenInset',
     webPreferences: {
         // TODO:
         // https://github.com/electron/electron/pull/794
@@ -51,16 +57,26 @@ export const BROWSER_WINDOW_OPTIONS: Electron.BrowserWindowConstructorOptions = 
          * that we keep user cookies including Google Analytics cookies.
          */
         //
-        partition: 'persist:polar-app'
+        partition: MAIN_SESSION_PARTITION_NAME,
+
+        // enable/disable webview/iframe support.
+        // webviewTag: true,
+        // nodeIntegrationInSubFrames: true
+
 
     }
 
 });
 
+/**
+ * @Deprecated now using this code in polar-desktop-app
+ */
 export class MainAppBrowserWindowFactory {
 
     public static createWindow(browserWindowOptions: Electron.BrowserWindowConstructorOptions = BROWSER_WINDOW_OPTIONS,
                                url = DEFAULT_URL): Promise<BrowserWindow> {
+
+        // ElectronUserAgents.registerUserAgentHandler(MAIN_SESSION_PARTITION_NAME);
 
         browserWindowOptions = Object.assign({}, browserWindowOptions);
 
@@ -85,12 +101,10 @@ export class MainAppBrowserWindowFactory {
             readonly defaultValue?: number;
         }
 
-        const MIN_FACTOR = 0.4;
-
         const dimensionMappings: DimensionMapping[] = [
 
-            {original: 'minHeight', dimension: 'height', defaultValue: display.size.width * MIN_FACTOR},
-            {original: 'minWidth', dimension: 'width', defaultValue: display.size.height * MIN_FACTOR},
+            {original: 'minHeight', dimension: 'height', defaultValue: 800},
+            {original: 'minWidth', dimension: 'width', defaultValue: 600},
 
             {original: 'height', dimension: 'height'},
             {original: 'width', dimension: 'width'}
@@ -107,27 +121,23 @@ export class MainAppBrowserWindowFactory {
 
         }
 
+        // log.notice("Creating browser window with options: ", browserWindowOptions);
+
         // Create the browser window.
         const browserWindow = new BrowserWindow(browserWindowOptions);
 
-        browserWindow.on('close', function(e) {
-            e.preventDefault();
+        browserWindow.webContents.on('new-window', (e, newURL) => {
 
-            if (browserWindow.webContents) {
+            if (ExternalNavigationBlock.get()) {
 
-                browserWindow.webContents.clearHistory();
-                browserWindow.webContents.session.clearCache(() => {
-                    browserWindow.destroy();
-                });
+                e.preventDefault();
+                shell.openExternal(newURL)
+                    .catch(err => log.error("Could not open external URL", err, newURL));
 
+            } else {
+                log.notice("Allowing external navigation to new window URL: " + newURL);
             }
 
-        });
-
-        browserWindow.webContents.on('new-window', (e, url) => {
-            e.preventDefault();
-            shell.openExternal(url)
-                .catch(err => log.error("Cloud open external URL", err, url));
         });
 
         browserWindow.webContents.on('will-navigate', (e, navURL) => {
@@ -139,34 +149,33 @@ export class MainAppBrowserWindowFactory {
 
             const host = parsedURL.hostname;
 
-            const allowedHosts = ["accounts.google.com",
-                                  "polar-32b0f.firebaseapp.com",
-                                  "accountchooser.com",
-                                  "www.accountchooser.com",
-                                  "localhost"];
-
             if (host === "localhost") {
                 log.info("Always allowing localhost URL");
                 return;
             }
 
-            if (navURL.startsWith("https://") && allowedHosts.includes(host)) {
-                log.info("Allowing URL for authentication: " + navURL);
+            if (ExternalNavigationBlock.get()) {
+
+                log.info("Attempt to navigate to new URL: ", navURL);
+                // required to force the URLs clicked to open in a new browser.  The
+                // user probably / certainly wants to use their main browser.
+                e.preventDefault();
+                shell.openExternal(navURL)
+                    .catch(err => log.error("Cloud open external URL", err, url));
+
+            } else {
+                log.notice("Allowing external navigation to: " + navURL);
                 return;
             }
 
-            log.info("Attempt to navigate to new URL: ", navURL);
-            // required to force the URLs clicked to open in a new browser.  The
-            // user probably / certainly wants to use their main browser.
-            e.preventDefault();
-            shell.openExternal(navURL)
-                .catch(err => log.error("Cloud open external URL", err, url));
-
         });
 
+        // compute the userAgent that we should be using for the renderer
+        const userAgent = ElectronUserAgents.computeUserAgentFromWebContents(browserWindow.webContents);
+
         log.info("Loading URL: " + url);
-        browserWindow.loadURL(url)
-            .catch(err => log.error("Cloud not load URL ", err, url));
+        browserWindow.loadURL(url, {userAgent})
+            .catch(err => log.error("Could not load URL ", err, url));
 
         return new Promise<BrowserWindow>(resolve => {
 
@@ -176,7 +185,7 @@ export class MainAppBrowserWindowFactory {
                 // it persists teh zoom factor between restarts and restores
                 // the zoom factor for the user but this can break / confuse
                 // PHZ loading so we always want them to start at 1.0
-                browserWindow.webContents.setZoomFactor(1.0);
+                browserWindow.webContents.zoomFactor = 1.0;
 
                 browserWindow.show();
 

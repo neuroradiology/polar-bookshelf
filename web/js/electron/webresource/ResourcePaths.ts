@@ -1,11 +1,11 @@
-
 import {app, remote} from 'electron';
 import path from 'path';
 import fs from 'fs';
-import {isPresent} from '../../Preconditions';
-import {URLs} from '../../util/URLs';
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {URLs} from 'polar-shared/src/util/URLs';
+import {URLStr} from "polar-shared/src/util/Strings";
 
-const USE_FILE_URL = true;
+const USE_FILE_URL = false;
 
 /**
  * Given a relative path, return a full path to a local app resource.
@@ -57,7 +57,7 @@ export class ResourcePaths {
      * @param relativeURL
      */
     public static resourceURLFromRelativeURL(relativeURL: string,
-                                             useFileURL: boolean = USE_FILE_URL): string {
+                                             useFileURL: boolean = USE_FILE_URL): URLStr {
 
         let relativePath = relativeURL;
         let queryData = "";

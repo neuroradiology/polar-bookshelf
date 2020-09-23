@@ -1,27 +1,28 @@
 import {ListenablePersistenceLayer} from './ListenablePersistenceLayer';
 import {PersistenceLayerListener} from './PersistenceLayerListener';
-import {DocMetaSnapshotEventListener} from './Datastore';
-import {FileRef} from './Datastore';
-import {DeleteResult} from './Datastore';
-import {GetFileOpts} from './Datastore';
-import {ErrorListener} from './Datastore';
-import {DatastoreInitOpts} from './Datastore';
-import {SnapshotResult} from './Datastore';
-import {BinaryFileData} from './Datastore';
-import {WriteFileOpts} from './Datastore';
-import {DatastoreOverview} from './Datastore';
-import {DatastoreCapabilities} from './Datastore';
-import {Datastore} from './Datastore';
-import {Backend} from './Backend';
-import {DocMetaFileRef} from './DocMetaRef';
-import {DocMetaRef} from './DocMetaRef';
+import {
+    BinaryFileData,
+    Datastore,
+    DatastoreCapabilities,
+    DatastoreInitOpts,
+    DatastoreOverview,
+    DeleteResult,
+    DocMetaSnapshotEventListener, DocMetaSnapshotOpts, DocMetaSnapshotResult,
+    ErrorListener,
+    SnapshotResult,
+    WriteFileOpts
+} from './Datastore';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
 import {DatastoreMutation} from './DatastoreMutation';
-import {DocMeta} from '../metadata/DocMeta';
-import {Optional} from '../util/ts/Optional';
-import {DocFileMeta} from './DocFileMeta';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
 import {WriteOpts} from './PersistenceLayer';
-import {DocInfo} from '../metadata/DocInfo';
 import {RendererAnalytics} from '../ga/RendererAnalytics';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {UserTagsDB} from "./UserTagsDB";
+import {GetFileOpts} from "polar-shared/src/datastore/IDatastore";
 
 const tracer = RendererAnalytics.createTracer('persistence-layer');
 
@@ -29,6 +30,7 @@ const tracer = RendererAnalytics.createTracer('persistence-layer');
  * A PersistenceLayer that traces potentially slow operations so we can
  * analyze performance at runtime and try to keep optimizing the high level
  * operations.
+ * @NotStale
  */
 export class TracedPersistenceLayer implements ListenablePersistenceLayer {
 
@@ -59,6 +61,10 @@ export class TracedPersistenceLayer implements ListenablePersistenceLayer {
         return tracer.traceAsync('containsFile', () => this.delegate.containsFile(backend, ref));
     }
 
+    public deleteFile(backend: Backend, ref: FileRef): Promise<void> {
+        return tracer.traceAsync('deleteFile', () => this.datastore.deleteFile(backend, ref));
+    }
+
     public async deactivate(): Promise<void> {
         return this.delegate.deactivate();
     }
@@ -67,16 +73,20 @@ export class TracedPersistenceLayer implements ListenablePersistenceLayer {
         return tracer.traceAsync('delete', () => this.delegate.delete(docMetaFileRef, datastoreMutation));
     }
 
-    public async getDocMeta(fingerprint: string): Promise<DocMeta | undefined> {
+    public async getDocMeta(fingerprint: string): Promise<IDocMeta| undefined> {
         return tracer.traceAsync('getDocMeta', () => this.delegate.getDocMeta(fingerprint));
     }
 
-    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaSnapshot(opts: DocMetaSnapshotOpts<IDocMeta>): Promise<DocMetaSnapshotResult> {
+        return tracer.traceAsync('getDocMetaSnapshot', () => this.delegate.getDocMetaSnapshot(opts));
+    }
+
+    public async getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
         return tracer.traceAsync('getDocMetaRefs', () => this.delegate.getDocMetaRefs());
     }
 
-    public async getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
-        return tracer.traceAsync('getFile', () => this.delegate.getFile(backend, ref, opts));
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): DocFileMeta {
+        return tracer.trace('getFile', () => this.delegate.getFile(backend, ref, opts));
     }
 
     public async init(errorListener?: ErrorListener, opts?: DatastoreInitOpts): Promise<void> {
@@ -95,11 +105,11 @@ export class TracedPersistenceLayer implements ListenablePersistenceLayer {
         return this.delegate.stop();
     }
 
-    public async write(fingerprint: string, docMeta: DocMeta, opts?: WriteOpts): Promise<DocInfo> {
+    public async write(fingerprint: string, docMeta: IDocMeta, opts?: WriteOpts): Promise<IDocInfo> {
         return tracer.traceAsync('write', () => this.delegate.write(fingerprint, docMeta, opts));
     }
 
-    public async writeDocMeta(docMeta: DocMeta, datastoreMutation?: DatastoreMutation<DocInfo>): Promise<DocInfo> {
+    public async writeDocMeta(docMeta: IDocMeta, datastoreMutation?: DatastoreMutation<IDocInfo>): Promise<IDocInfo> {
         return tracer.traceAsync('writeDocMeta', () => this.delegate.writeDocMeta(docMeta, datastoreMutation));
     }
 
@@ -117,6 +127,10 @@ export class TracedPersistenceLayer implements ListenablePersistenceLayer {
 
     public capabilities(): DatastoreCapabilities {
         return this.delegate.capabilities();
+    }
+
+    public getUserTagsDB(): Promise<UserTagsDB> {
+        return this.delegate.getUserTagsDB();
     }
 
 }

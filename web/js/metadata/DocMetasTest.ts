@@ -1,16 +1,22 @@
 import {assert} from 'chai';
 import {DocMeta} from './DocMeta';
-import {DocMetas} from './DocMetas';
+import {DocMetas, MockDocMetas} from './DocMetas';
 import {MetadataSerializer} from './MetadataSerializer';
 import {assertJSON} from '../test/Assertions';
-import {PagemarkType} from './PagemarkType';
-import {TestingTime} from '../test/TestingTime';
+import {PagemarkType} from 'polar-shared/src/metadata/PagemarkType';
+import {TestingTime} from 'polar-shared/src/test/TestingTime';
 import {TextHighlights} from './TextHighlights';
-import {Proxies} from '../proxies/Proxies';
+import {Pagemarks} from './Pagemarks';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
 
 TestingTime.freeze();
 
 describe('DocMetas', function() {
+
+    beforeEach(function() {
+        Pagemarks.sequences.id = 0;
+        Pagemarks.sequences.batch = 0;
+    });
 
     describe('JSON', function() {
 
@@ -19,7 +25,29 @@ describe('DocMetas', function() {
             const fingerprint = "0x001";
 
             const docMeta = DocMetas.createWithinInitialPagemarks(fingerprint, 14);
+            console.log(JSON.stringify(docMeta, null, "  "));
+
             DocMetas.addPagemarks(docMeta, {nrPages: 1, offsetPage: 4, percentage: 50});
+
+            const json = MetadataSerializer.serialize(docMeta, "  ");
+
+            const actual = DocMetas.deserialize(json, fingerprint);
+
+            assertJSON(docMeta, actual);
+
+            assert.equal(actual instanceof DocMeta, true);
+
+
+        });
+
+        it("One page", function() {
+
+            const fingerprint = "0x001";
+
+            const docMeta = DocMetas.create(fingerprint, 1);
+            console.log(JSON.stringify(docMeta, null, "  "));
+
+            // DocMetas.addPagemarks(docMeta, {nrPages: 1, offsetPage: 1, percentage: 50});
 
             const json = MetadataSerializer.serialize(docMeta, "  ");
 
@@ -46,146 +74,22 @@ describe('DocMetas', function() {
 
     });
 
+    it('No whitespace option', function() {
+
+        // make sure no whitespace is used
+        const fingerprint = "0x001";
+
+        const docMeta = MockDocMetas.createMockDocMeta(fingerprint);
+        const json = DocMetas.serialize(docMeta, "");
+
+        assert.isTrue(json.startsWith("{\"annotationInfo\":{},\"version\":2,\"attachments\":{}"));
+
+        assert.equal(json.indexOf("\n"), -1);
+
+
+    });
+
     describe('Deserialize', function() {
-
-        it("Test Deserializing and then updating some pagemarks", function() {
-
-            const fingerprint = "0x001";
-
-            const nrPages = 2;
-            let docMeta = DocMetas.createWithinInitialPagemarks(fingerprint, nrPages);
-
-            docMeta.docInfo.uuid = "__canonicalized__";
-
-            const json = DocMetas.serialize(docMeta, "  ");
-
-            const expected = {
-                    "annotationInfo": {},
-                    "version": 2,
-                    "attachments": {},
-                    "docInfo": {
-                        "progress": 100,
-                        "pagemarkType": "SINGLE_COLUMN",
-                        "properties": {},
-                        "archived": false,
-                        "flagged": false,
-                        "tags": {},
-                        "nrPages": 2,
-                        "fingerprint": "0x001",
-                        "added": "2012-03-02T11:38:49.321Z",
-                        "uuid": "__canonicalized__",
-                        "readingPerDay": {
-                            "2012-03-02": 2
-                        },
-                        attachments: {}
-                    },
-                    "pageMetas": {
-                        "1": {
-                            "pagemarks": {
-                                "12CDjpvoCY": {
-                                    "id": "12CDjpvoCY",
-                                    "created": "2012-03-02T11:38:49.321Z",
-                                    "lastUpdated": "2012-03-02T11:38:49.321Z",
-                                    "type": "SINGLE_COLUMN",
-                                    "percentage": 100,
-                                    "column": 0,
-                                    "rect": {
-                                        "left": 0,
-                                        "top": 0,
-                                        "width": 100,
-                                        "height": 100
-                                    },
-                                    "batch": "1TLPYPE5XU",
-                                    "mode": "READ",
-                                    "notes": {}
-                                }
-                            },
-                            "notes": {},
-                            "comments": {},
-                            "questions": {},
-                            "readingProgress": {
-                                "136SMQ5mZM": {
-                                    "created": "2012-03-02T11:38:49.321Z",
-                                    "id": "136SMQ5mZM",
-                                    "progress": 100,
-                                    "progressByMode": {
-                                        "READ": 100,
-                                    }
-                                }
-                            },
-                            "flashcards": {},
-                            "textHighlights": {},
-                            "areaHighlights": {},
-                            "screenshots": {},
-                            "thumbnails": {},
-                            "pageInfo": {
-                                "num": 1
-                            }
-                        },
-                        "2": {
-                            "pagemarks": {
-                                "12wfHNWzGf": {
-                                    "id": "12wfHNWzGf",
-                                    "created": "2012-03-02T11:38:49.321Z",
-                                    "lastUpdated": "2012-03-02T11:38:49.321Z",
-                                    "type": "SINGLE_COLUMN",
-                                    "percentage": 100,
-                                    "column": 0,
-                                    "rect": {
-                                        "left": 0,
-                                        "top": 0,
-                                        "width": 100,
-                                        "height": 100
-                                    },
-                                    "batch": "12r4saWMd2",
-                                    "mode": "READ",
-                                    "notes": {}
-                                }
-                            },
-                            "notes": {},
-                            "comments": {},
-                            "questions": {},
-                            "readingProgress": {
-                                "145xgms7VH": {
-                                    "created": "2012-03-02T11:38:49.321Z",
-                                    "id": "145xgms7VH",
-                                    "progress": 100,
-                                    "progressByMode": {
-                                        "READ": 100,
-                                    }
-                                }
-                            },
-                            "flashcards": {},
-                            "textHighlights": {},
-                            "areaHighlights": {},
-                            "screenshots": {},
-                            "thumbnails": {},
-                            "pageInfo": {
-                                "num": 2
-                            }
-                        }
-                    }
-                }
-            ;
-
-            assert.equal(typeof json, "string");
-
-            assertJSON(json, expected);
-
-            docMeta = DocMetas.deserialize(json, fingerprint);
-
-            // now we have to trace it like it would be in production..
-            docMeta = Proxies.create(docMeta);
-
-            assertJSON(docMeta, expected);
-
-            const pageMeta = docMeta.getPageMeta(1);
-
-            (pageMeta as any).pagemarks = {};
-
-            assert.deepEqual(docMeta.getPageMeta(1).pagemarks, {});
-
-        });
 
     });
 
@@ -199,7 +103,7 @@ describe('DocMetas', function() {
                 let docMeta = createUpgradeDoc();
 
                 assert.notEqual(docMeta.docInfo, null);
-                delete (docMeta.getPageMeta(1) as any).textHighlights;
+                delete (DocMetas.getPageMeta(docMeta, 1) as any).textHighlights;
 
                 delete docMeta.docInfo.pagemarkType;
 
@@ -212,34 +116,36 @@ describe('DocMetas', function() {
             it("Pagemark without rect", function() {
                 let docMeta = createUpgradeDoc();
 
-                console.log(Object.keys(docMeta.getPageMeta(1).pagemarks));
+                console.log(Object.keys(DocMetas.getPageMeta(docMeta, 1).pagemarks));
 
-                delete docMeta.getPageMeta(1).pagemarks["1hajrtFtkP"].rect ;
+                assertJSON(Object.keys(DocMetas.getPageMeta(docMeta, 1).pagemarks), ["1s2gw2Mkwb"]);
+
+                delete DocMetas.getPageMeta(docMeta, 1).pagemarks["1s2gw2Mkwb"].rect ;
 
                 docMeta = DocMetas.upgrade(docMeta);
 
                 const expected = {
-                        "1hajrtFtkP": {
-                            "id": "1hajrtFtkP",
-                            "created": "2012-03-02T11:38:49.321Z",
-                            "lastUpdated": "2012-03-02T11:38:49.321Z",
-                            "type": "SINGLE_COLUMN",
-                            "percentage": 100,
+                        "1s2gw2Mkwb": {
+                            "batch": "1Y9CcEHSxc",
                             "column": 0,
-                            "batch": "1jQboVWxtJ",
+                            "created": "2012-03-02T11:38:49.321Z",
+                            "guid": "1s2gw2Mkwb",
+                            "id": "1s2gw2Mkwb",
+                            "lastUpdated": "2012-03-02T11:38:49.321Z",
                             "mode": "READ",
                             "notes": {},
+                            "percentage": 100,
                             "rect": {
+                                "height": 100,
                                 "left": 0,
                                 "top": 0,
-                                "width": 100,
-                                "height": 100
-                            }
+                                "width": 100
+                            },
+                            "type": "SINGLE_COLUMN"
                         }
-                    }
-                ;
+                    };
 
-                assertJSON(docMeta.getPageMeta(1).pagemarks, expected);
+                assertJSON(DocMetas.getPageMeta(docMeta, 1).pagemarks, expected);
 
             });
 
@@ -247,11 +153,11 @@ describe('DocMetas', function() {
 
                 let docMeta = createUpgradeDoc();
 
-                delete (docMeta.getPageMeta(1) as any).textHighlights;
+                delete (DocMetas.getPageMeta(docMeta, 1) as any).textHighlights;
 
                 docMeta = DocMetas.upgrade(docMeta);
 
-                assert.deepEqual(docMeta.getPageMeta(1).textHighlights, {});
+                assert.deepEqual(DocMetas.getPageMeta(docMeta, 1).textHighlights, {});
 
             });
 
@@ -259,11 +165,11 @@ describe('DocMetas', function() {
 
                 let docMeta = createUpgradeDoc();
 
-                delete (docMeta.getPageMeta(1) as any).pagemarks;
+                delete (DocMetas.getPageMeta(docMeta, 1) as any).pagemarks;
 
                 docMeta = DocMetas.upgrade(docMeta);
 
-                assert.deepEqual(docMeta.getPageMeta(1).pagemarks, {});
+                assert.deepEqual(DocMetas.getPageMeta(docMeta, 1).pagemarks, {});
 
             });
 
@@ -271,36 +177,36 @@ describe('DocMetas', function() {
 
                 let docMeta = createUpgradeDoc();
 
-                console.log(JSON.stringify(docMeta.getPageMeta(1).pagemarks, null, "  "));
+                console.log(JSON.stringify(DocMetas.getPageMeta(docMeta, 1).pagemarks, null, "  "));
 
-                console.log(Object.keys(docMeta.getPageMeta(1).pagemarks));
+                assertJSON(Object.keys(DocMetas.getPageMeta(docMeta, 1).pagemarks), ["1s2gw2Mkwb"]);
 
-                (<any> (docMeta.getPageMeta(1).pagemarks["12cyUyU3s3"].id)) = null;
+                (<any> (DocMetas.getPageMeta(docMeta, 1).pagemarks["1s2gw2Mkwb"].id)) = null;
 
                 docMeta = DocMetas.upgrade(docMeta);
 
                 const expected = {
-                        "12cyUyU3s3": {
-                            "id": "12cyUyU3s3",
-                            "created": "2012-03-02T11:38:49.321Z",
-                            "lastUpdated": "2012-03-02T11:38:49.321Z",
-                            "type": "SINGLE_COLUMN",
-                            "percentage": 100,
+                        "1s2gw2Mkwb": {
+                            "batch": "1Y9CcEHSxc",
                             "column": 0,
-                            "rect": {
-                                "left": 0,
-                                "top": 0,
-                                "width": 100,
-                                "height": 100
-                            },
-                            "batch": "1ZUGnh2R1J",
+                            "created": "2012-03-02T11:38:49.321Z",
+                            "guid": "1s2gw2Mkwb",
+                            "id": "1s2gw2Mkwb",
+                            "lastUpdated": "2012-03-02T11:38:49.321Z",
                             "mode": "READ",
                             "notes": {},
+                            "percentage": 100,
+                            "rect": {
+                                "height": 100,
+                                "left": 0,
+                                "top": 0,
+                                "width": 100
+                            },
+                            "type": "SINGLE_COLUMN"
                         }
-                    }
-                ;
+                    };
 
-                assertJSON(docMeta.getPageMeta(1).pagemarks, expected);
+                assertJSON(DocMetas.getPageMeta(docMeta, 1).pagemarks, expected);
 
             });
 
@@ -308,7 +214,7 @@ describe('DocMetas', function() {
 
                 let docMeta = createUpgradeDoc();
 
-                delete docMeta.getPageMeta(1).textHighlights["12pNUv1Y9S"].id;
+                delete DocMetas.getPageMeta(docMeta, 1).textHighlights["12pNUv1Y9S"].id;
 
                 docMeta = DocMetas.upgrade(docMeta);
 
@@ -345,7 +251,8 @@ describe('DocMetas', function() {
                     }
                 };
 
-                assertJSON(docMeta.getPageMeta(1).textHighlights, expected);
+                
+                assertJSON(DocMetas.getPageMeta(docMeta, 1).textHighlights, expected);
 
             });
 
@@ -355,7 +262,7 @@ describe('DocMetas', function() {
 
 });
 
-function createUpgradeDoc() {
+function createUpgradeDoc(): IDocMeta {
 
     const fingerprint = "0x001";
     const nrPages = 1;
@@ -363,7 +270,7 @@ function createUpgradeDoc() {
 
     const textHighlight = TextHighlights.createMockTextHighlight();
 
-    docMeta.getPageMeta(1).textHighlights[textHighlight.id] = textHighlight;
+    DocMetas.getPageMeta(docMeta, 1).textHighlights[textHighlight.id] = textHighlight;
 
     return docMeta;
 

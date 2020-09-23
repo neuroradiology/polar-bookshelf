@@ -1,12 +1,10 @@
 /* eslint react/no-multi-comp: 0, react/prop-types: 0 */
 import React from 'react';
 import {IStyleMap} from '../../react/IStyleMap';
-import {Progress} from 'reactstrap';
-import {Reactor} from '../../reactor/Reactor';
-import Collapse from 'reactstrap/lib/Collapse';
 import {IEventDispatcher} from '../../reactor/SimpleReactor';
 import {EventListener} from '../../reactor/EventListener';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import LinearProgress from '@material-ui/core/LinearProgress';
 
 const log = Logger.create();
 
@@ -30,26 +28,9 @@ const Styles: IStyleMap = {
         zIndex: 99999999999,
     },
 
-    progress: {
-
-        position: 'fixed',
-        left: '0',
-        bottom: '0',
-        minWidth: '100%',
-        zIndex: 99999999999,
-        height: '5px',
-
-    }
-
 };
 
-/**
- * The sync bar is a bar in the bottom right of the page that displays sync
- * progress and can bring up a popup displaying what it is currently doing.
- */
 export class SyncBar extends React.Component<IProps, IState> {
-
-    private value: string = '';
 
     private listener?: EventListener<SyncBarProgress>;
 
@@ -92,24 +73,21 @@ export class SyncBar extends React.Component<IProps, IState> {
 
         const isOpen = progress !== 0;
 
+        if (! isOpen) {
+            return null;
+        }
+
         return (
 
             <div style={Styles.root} className="">
 
-                <Collapse timeout={0} isOpen={isOpen}>
+                <div style={Styles.textBox} className="border-top border-right">
+                    {this.state.message}
+                </div>
 
-                    <div style={Styles.textBox} className="border-top border-right">
-                        {this.state.message}
-                    </div>
-
-                    {/*the title string doesn't render properly and looks horrible*/}
-                    <Progress style={Styles.progress}
-                              className="rounded-0 border-top border-left border-secondary progress-bar-striped"
-                              value={progress}>
-                        {/*{Math.floor(progress)}%*/}
-                    </Progress>
-
-                </Collapse>
+                {/*the title string doesn't render properly and looks horrible*/}
+                <LinearProgress variant="determinate"
+                                value={progress}/>
 
             </div>
 

@@ -1,26 +1,25 @@
-import {FileRef} from './Datastore';
-import {DeleteResult} from './Datastore';
-import {GetFileOpts} from './Datastore';
-import {ErrorListener} from './Datastore';
-import {DatastoreInitOpts} from './Datastore';
-import {BinaryFileData} from './Datastore';
-import {WriteFileOpts} from './Datastore';
-import {DatastoreOverview} from './Datastore';
-import {Datastore} from './Datastore';
-import {DatastoreID} from './Datastore';
-import {InitResult} from './Datastore';
-import {Backend} from './Backend';
-import {DocMetaFileRef} from './DocMetaRef';
-import {DocMetaRef} from './DocMetaRef';
+import {
+    BinaryFileData,
+    Datastore,
+    DatastoreID,
+    DatastoreInitOpts,
+    DatastoreOverview,
+    DeleteResult, DocMetaSnapshotOpts, DocMetaSnapshotResult,
+    ErrorListener,
+    InitResult,
+    WriteFileOpts,
+    WriteOpts
+} from './Datastore';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
 import {DatastoreMutation} from './DatastoreMutation';
-import {DocMeta} from '../metadata/DocMeta';
-import {Optional} from '../util/ts/Optional';
-import {DocFileMeta} from './DocFileMeta';
-import {WriteOpts} from './Datastore';
-import {DocInfo} from '../metadata/DocInfo';
-import {IDocInfo} from '../metadata/DocInfo';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {RendererAnalytics} from '../ga/RendererAnalytics';
 import {DelegatedDatastore} from './DelegatedDatastore';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {GetFileOpts} from "polar-shared/src/datastore/IDatastore";
 
 const tracer = RendererAnalytics.createTracer('datastore');
 
@@ -28,6 +27,8 @@ const tracer = RendererAnalytics.createTracer('datastore');
  * A PersistenceLayer that traces potentially slow operations so we can
  * analyze performance at runtime and try to keep optimizing the high level
  * operations.
+ *
+ * @NotStale
  */
 export class TracedDatastore extends DelegatedDatastore {
 
@@ -65,12 +66,16 @@ export class TracedDatastore extends DelegatedDatastore {
         return tracer.traceAsync('getDocMeta', () => this.delegate.getDocMeta(fingerprint));
     }
 
-    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaSnapshot(opts: DocMetaSnapshotOpts<string>): Promise<DocMetaSnapshotResult> {
+        return tracer.traceAsync('getDocMetaSnapshot', () => this.delegate.getDocMetaSnapshot(opts));
+    }
+
+    public async getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
         return tracer.traceAsync('getDocMetaRefs', () => this.delegate.getDocMetaRefs());
     }
 
-    public async getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
-        return tracer.traceAsync('getFile', () => this.delegate.getFile(backend, ref, opts));
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): DocFileMeta {
+        return tracer.trace('getFile', () => this.delegate.getFile(backend, ref, opts));
     }
 
     public async init(errorListener?: ErrorListener, opts?: DatastoreInitOpts): Promise<InitResult> {
@@ -89,7 +94,7 @@ export class TracedDatastore extends DelegatedDatastore {
         return tracer.traceAsync('write', () => this.delegate.write(fingerprint, data, docInfo, opts));
     }
 
-    public async writeDocMeta(docMeta: DocMeta, datastoreMutation?: DatastoreMutation<DocInfo>): Promise<DocInfo> {
+    public async writeDocMeta(docMeta: IDocMeta, datastoreMutation?: DatastoreMutation<IDocInfo>): Promise<IDocInfo> {
         return tracer.traceAsync('writeDocMeta', () => this.delegate.writeDocMeta(docMeta, datastoreMutation));
     }
 

@@ -1,6 +1,6 @@
-import {FilePaths} from '../util/FilePaths';
-import {Files} from '../util/Files';
-import {Logger} from '../logger/Logger';
+import {FilePaths} from 'polar-shared/src/util/FilePaths';
+import {Files} from 'polar-shared/src/util/Files';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {Directories} from '../datastore/Directories';
 
 const log = Logger.create();
@@ -10,8 +10,10 @@ export class PolarDataDir {
     public static async useFreshDirectory(name: string): Promise<string> {
 
         const dataDir = FilePaths.createTempName(name);
-        process.env.POLAR_DATA_DIR = dataDir;
+
         console.log("Using new dataDir: " + dataDir);
+
+        process.env.POLAR_DATA_DIR = dataDir;
         await Files.removeDirectoryRecursivelyAsync(dataDir);
 
         const directories = new Directories();

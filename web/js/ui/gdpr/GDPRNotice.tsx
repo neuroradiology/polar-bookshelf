@@ -1,15 +1,7 @@
 /* eslint react/no-multi-comp: 0, react/prop-types: 0 */
 import React from 'react';
-import {IStyleMap} from '../../react/IStyleMap';
-import {Progress} from 'reactstrap';
-import {Reactor} from '../../reactor/Reactor';
-import Collapse from 'reactstrap/lib/Collapse';
-import {IEventDispatcher} from '../../reactor/SimpleReactor';
-import {EventListener} from '../../reactor/EventListener';
-import {Logger} from '../../logger/Logger';
-import Button from 'reactstrap/lib/Button';
-
-const log = Logger.create();
+import {Devices} from "polar-shared/src/util/Devices";
+import Button from "@material-ui/core/Button";
 
 class Styles {
 
@@ -52,6 +44,11 @@ export class GDPRNotice extends React.Component<any, IState> {
 
         const display = this.state.disabled ? 'none' : 'block';
 
+        if (! Devices.isDesktop()) {
+            // doesn't display properly on mobile.
+            return null;
+        }
+
         return (
 
             <div id="gdpr-notice" style={{display}}>
@@ -61,52 +58,30 @@ export class GDPRNotice extends React.Component<any, IState> {
                     <div className="pt-1 pb-1">
 
                         <div style={Styles.intro}>
-                            We use cookies to track your usage.
+                            We use cookies to track improve Polar.
                         </div>
 
                         <p>
-                            We use cookies to track your usage and to determine
-                            which features are used to improve the quality of Polar.
+                            We use cookies to help improve the quality of Polar.
                         </p>
 
                         <p>
-                            Additionally, we track application errors which helps us
-                            find bugs and to prioritize which issues to fix.
+                            We <b>do not</b> send personally identifiable information at any point.
                         </p>
 
                         <p>
-                            This data is sent to 3rd parties which provide the
-                            infrastructure necessary to provide the analytics
-                            services needed to analyze and store the data.
-                        </p>
-
-                        <p>
-                            We avoid sending personally identifiable information
-                            at all times.
-                        </p>
-
-                        <div style={Styles.intro}>
-                            Cloud storage and privacy.
-                        </div>
-
-                        <p>
-                            When using Polar cloud sync we store your data in the
-                            cloud and authentication / authorization is controlled
-                            by the auth provider you select.
-                        </p>
-
-                        <p>
-                            We do not sell your private data.  Your private data is
-                            your and we're not interested in selling, monetizing, or
-                            distributing it to 3rd parties except when necessary to
-                            provide data storage services.
+                            We <b>do not</b> sell your private data to 3rd parties.
                         </p>
 
                     </div>
 
                     <div className="text-right">
 
-                        <Button color="primary" onClick={() => this.onAccept()}>Accept</Button>
+                        <Button color="primary"
+                                variant="contained"
+                                onClick={() => this.onAccept()}>
+                            Accept
+                        </Button>
 
                     </div>
 

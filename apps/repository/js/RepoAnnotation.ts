@@ -2,46 +2,58 @@
  * Just like a DocDetail or DocInfo but designed to be used for in the UI so we
  * replace missing titles with Untitled and define other default values.
  */
-import {IDocInfo} from '../../../web/js/metadata/DocInfo';
-import {ISODateTimeString} from '../../../web/js/metadata/ISODateTimeStrings';
-import {Tag} from '../../../web/js/tags/Tag';
-import {Hashcode} from '../../../web/js/metadata/Hashcode';
-import {AnnotationType} from '../../../web/js/metadata/AnnotationType';
-import {HighlightColor} from '../../../web/js/metadata/BaseHighlight';
+import {ISODateTimeString} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {AnnotationType} from 'polar-shared/src/metadata/AnnotationType';
+import {Img} from 'polar-shared/src/metadata/Img';
+import {Tag} from 'polar-shared/src/tags/Tags';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {HighlightColor} from "polar-shared/src/metadata/IBaseHighlight";
+import {IFlashcard} from "polar-shared/src/metadata/IFlashcard";
+import {IAreaHighlight} from "polar-shared/src/metadata/IAreaHighlight";
+import {ITextHighlight} from "polar-shared/src/metadata/ITextHighlight";
+import {IComment} from 'polar-shared/src/metadata/IComment';
+import {HTMLStr, IDStr, PlainTextStr} from "polar-shared/src/util/Strings";
+import {IPageMeta} from "polar-shared/src/metadata/IPageMeta";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
 
-// FIXME: a lot of duplication here between DocAnnotations DocAnnotation
+// TODO: a lot of duplication here between DocAnnotations DocAnnotation
 
 export interface RepoAnnotation {
 
     /**
      * The document fingerprint this annotation belongs to.
      */
-    fingerprint: string;
+    readonly fingerprint: string;
 
-    id: string;
+    readonly id: IDStr;
 
-    text?: string;
+    readonly guid: IDStr;
 
-    type: AnnotationType;
+    readonly text: PlainTextStr | undefined;
 
-    created: ISODateTimeString;
+    // readonly html: HTMLStr;
 
-    tags?: Readonly<{[id: string]: Tag}>;
+    readonly annotationType: AnnotationType;
 
-    /**
-     * Extended metadata specific to each annotation type.
-     */
-    meta?: RepoHighlightInfo;
+    readonly created: ISODateTimeString;
 
-    /**
-     * The original DocInfo used to construct this RepoDocInfo.
-     */
-    docInfo: IDocInfo;
+    readonly tags: Readonly<{[id: string]: Tag}> | undefined;
+
+    readonly color: HighlightColor | undefined;
+
+    readonly img: Img | undefined;
+
+    readonly docMeta: IDocMeta;
+
+    // readonly pageMeta: IPageMeta;
+
+    readonly original: IFlashcard | IAreaHighlight | ITextHighlight | IComment;
 
 }
 
 /**
  * Additional metadata on a highlight.
+ * @Deprecated
  */
 export interface RepoHighlightInfo {
     color?: HighlightColor;

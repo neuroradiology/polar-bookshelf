@@ -1,7 +1,10 @@
-import {Preconditions} from '../Preconditions';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 import {Dimensions} from '../util/Dimensions';
 import {Interval} from '../math/Interval';
 import {Rects} from '../Rects';
+import {IAnnotationRect} from "polar-shared/src/metadata/IAnnotationRect";
+import {Percentage100, Percentages} from "polar-shared/src/util/Percentages";
+import {IDimensions} from 'polar-shared/src/util/IDimensions';
 
 const ENTIRE_PAGE = Rects.createFromBasicRect({ left: 0, top: 0, width: 100, height: 100});
 
@@ -9,8 +12,8 @@ const ENTIRE_PAGE = Rects.createFromBasicRect({ left: 0, top: 0, width: 100, hei
  * A AnnotationRect is a basic Rect for representing an annotation on a page.
  *
  * This is a box layout for an annotation.  We use the typical DOM positioning
- * style of top, left, width and height only instead of percentages we represent
- * this as percentage of the entire 'page'.
+ * style of top, left, width and height only instead of offset we represent this
+ * as percentage of the entire 'page'.
  *
  * This would represent the range within a page that a box covers.  This is
  * essentially a range has a start and end which are percentages of the page that
@@ -40,7 +43,7 @@ const ENTIRE_PAGE = Rects.createFromBasicRect({ left: 0, top: 0, width: 100, hei
  * This would NOT be a square but a rectangle and the percentages confuse that.
  *
  */
-export class AnnotationRect {
+export class AnnotationRect implements IAnnotationRect {
 
     /**
      * @type {number}
@@ -62,14 +65,24 @@ export class AnnotationRect {
      */
     public height: number;
 
-    constructor(obj: any) {
+    constructor(obj: IAnnotationRect) {
+
+        function round(value: number) {
+
+            // Fix rounding issues where we are > 100
+
+            if (value > 100 && value < 100.1) {
+                return 100;
+            }
+
+            return value;
+
+        }
 
         this.left = obj.left;
         this.top = obj.top;
-        this.width = obj.width;
-        this.height = obj.height;
-
-        Object.assign(this, obj);
+        this.width = round(obj.width);
+        this.height = round(obj.height);
 
         this._validate();
 
@@ -96,8 +109,8 @@ export class AnnotationRect {
     /**
      * Compute a percentage of the page that this rect holds.
      */
-    public toPercentage(): number {
-        return 100 * (Rects.createFromBasicRect(this).area / ENTIRE_PAGE.area);
+    public toPercentage(): Percentage100 {
+        return Percentages.calculate(Rects.createFromBasicRect(this).area, ENTIRE_PAGE.area);
     }
 
     /**
@@ -124,11 +137,13 @@ export class AnnotationRect {
      *
      * @return {Rect}
      */
-    public toDimensions(dimensions: Dimensions) {
+    public toDimensions(dimensions: IDimensions) {
 
-        Preconditions.assertNotNull(dimensions, "dimensions");
+        Preconditions.assertPresent(dimensions, "dimensions");
 
         const fractionalRect = this.toFractionalRect();
+
+        // TODO: this will give us fractional pixels which I think is wrong.
 
         return Rects.createFromBasicRect({
             left: fractionalRect.left * dimensions.width,
@@ -139,4 +154,23 @@ export class AnnotationRect {
 
     }
 
+    public toDimensionsFloor(dimensions: Dimensions) {
+
+        Preconditions.assertPresent(dimensions, "dimensions");
+
+        const fractionalRect = this.toFractionalRect();
+
+        // TODO: this will give us fractional pixels which I think is wrong.
+
+        return Rects.createFromBasicRect({
+            left: Math.floor(fractionalRect.left * dimensions.width),
+            width: Math.floor(fractionalRect.width * dimensions.width),
+            top: Math.floor(fractionalRect.top * dimensions.height),
+            height: Math.floor(fractionalRect.height * dimensions.height),
+        });
+
+    }
+
+
 }
+

@@ -1,13 +1,13 @@
-import {Dictionaries} from "../util/Dictionaries";
+import {Dictionaries} from "polar-shared/src/util/Dictionaries";
 
-const chai = require("chai");
-const chaiDiff = require("chai-diff");
+import chai from 'chai';
+// const chaiDiff = require("chai-diff");
 
 const assert = chai.assert;
 const expect = chai.expect;
 
 chai.config.truncateThreshold = 0;
-chai.use(chaiDiff);
+// chai.use(chaiDiff);
 
 export function assertJSON(actual: any,
                            expected: any,
@@ -25,7 +25,7 @@ export function assertJSON(actual: any,
     }
 
     try {
-        expect(actual).not. differentFrom(expected, message);
+        expect(actual).equal(expected, message);
     } catch (e) {
         console.error(e.message);
         throw e;

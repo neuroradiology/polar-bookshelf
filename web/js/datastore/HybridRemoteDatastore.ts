@@ -1,14 +1,14 @@
 import {Datastore, DatastoreID, ErrorListener, InitResult} from './Datastore';
+import {BinaryFileData} from './Datastore';
+import {WriteFileOpts} from './Datastore';
+import {isBinaryFileData} from './Datastore';
 import {DocMetaRef} from './DocMetaRef';
 import {DiskDatastore} from './DiskDatastore';
 import {RemoteDatastore} from './RemoteDatastore';
-import {Backend} from './Backend';
-import {FileRef} from './Datastore';
-import {BinaryFileData} from './Datastore';
-import {WriteFileOpts} from './Datastore';
-import {DocFileMeta} from './DocFileMeta';
-import {isBinaryFileData} from './Datastore';
-import {Blobs} from '../util/Blobs';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {Blobs} from 'polar-shared/src/util/Blobs';
+import {FileRef} from "polar-shared/src/datastore/FileRef";
 
 /**
  * A datastore which extends RemoteDatastore but adds support for local disk
@@ -33,7 +33,6 @@ export class HybridRemoteDatastore extends RemoteDatastore {
         return {};
     }
 
-
     public writeFile(backend: Backend, ref: FileRef, data: BinaryFileData, opts?: WriteFileOpts): Promise<DocFileMeta> {
 
         if ( !isBinaryFileData(data)) {
@@ -56,7 +55,7 @@ export class HybridRemoteDatastore extends RemoteDatastore {
 
     }
 
-    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
         return await this.diskDatastore.getDocMetaRefs();
     }
 
@@ -65,3 +64,4 @@ export class HybridRemoteDatastore extends RemoteDatastore {
     }
 
 }
+

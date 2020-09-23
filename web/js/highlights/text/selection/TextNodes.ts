@@ -1,4 +1,4 @@
-import {Preconditions} from '../../../Preconditions';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 
 export class TextNodes {
 
@@ -11,7 +11,9 @@ export class TextNodes {
      * @param length
      * @return {Range}
      */
-    public static getRange(textNode: Node, offset: number = 0, length?: number) {
+    public static getRange(textNode: Node,
+                           offset: number = 0,
+                           length?: number) {
 
         Preconditions.assertPresent(textNode, "textNode");
 
@@ -19,7 +21,8 @@ export class TextNodes {
             length = textNode.textContent!.length;
         }
 
-        const range = document.createRange();
+        const doc = textNode.ownerDocument || document;
+        const range = doc.createRange();
 
         range.setStart(textNode, offset);
         range.setEnd(textNode, length);
@@ -27,15 +30,5 @@ export class TextNodes {
         return range;
 
     }
-
-    // /**
-    //  *
-    //  * @param textNode {Node}
-    //  * @param offset {number}
-    //  * @param length {number}
-    //  */
-    // static getClientRects(textNode, offset, length) {
-    //     return range.getClientRects();
-    // }
 
 }

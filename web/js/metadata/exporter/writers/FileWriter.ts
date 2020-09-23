@@ -1,6 +1,6 @@
 import {WriteStream} from "fs";
-import {Files} from '../../../util/Files';
-import {Preconditions} from '../../../Preconditions';
+import {Files} from 'polar-shared/src/util/Files';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 import {Writer} from '../Exporters';
 
 export class FileWriter implements Writer {
@@ -14,7 +14,7 @@ export class FileWriter implements Writer {
     }
 
     public async init(): Promise<void> {
-        this.stream = await Files.createWriteStream(this.path);
+        this.stream = Files.createWriteStream(this.path);
     }
 
     public async write(data: string): Promise<void> {

@@ -2,34 +2,35 @@ import {AbstractDatastore, Datastore, DatastoreID} from './Datastore';
 import {WritableBinaryMetaDatastore} from './Datastore';
 import {DocMetaSnapshotEventListener} from './Datastore';
 import {DatastoreCapabilities} from './Datastore';
-import {NetworkLayers} from './Datastore';
 import {PrefsProvider} from './Datastore';
 import {ErrorListener} from './Datastore';
 import {DatastoreInitOpts} from './Datastore';
 import {DatastoreOverview} from './Datastore';
 import {SnapshotResult} from './Datastore';
 import {InitResult} from './Datastore';
-import {FileRef} from './Datastore';
 import {DeleteResult} from './Datastore';
-import {GetFileOpts} from './Datastore';
 import {BinaryFileData} from './Datastore';
 import {WriteFileOpts} from './Datastore';
-import {BackendFileRef} from './Datastore';
-import {BackendFileRefs} from './Datastore';
-import {Logger} from '../logger/Logger';
+import {WriteOpts} from './Datastore';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {DocMetaRef} from './DocMetaRef';
 import {DocMetaFileRef} from './DocMetaRef';
-import {IDocInfo} from '../metadata/DocInfo';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {DatastoreMutation} from './DatastoreMutation';
-import {Backend} from './Backend';
-import {Optional} from '../util/ts/Optional';
-import {DocFileMeta} from './DocFileMeta';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
 import {FirebaseDatastore} from './FirebaseDatastore';
+import {FirebaseDocMetaID} from './FirebaseDatastore';
 import {DocMetas} from '../metadata/DocMetas';
 import {DocMeta} from '../metadata/DocMeta';
-import {Datastores} from './Datastores';
-import {FirebaseDocMetaID} from './FirebaseDatastore';
-import {WriteOpts} from './Datastore';
+import {BackendFileRefs} from './BackendFileRefs';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {BackendFileRef} from "polar-shared/src/datastore/BackendFileRef";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {
+    GetFileOpts,
+    NetworkLayers
+} from "polar-shared/src/datastore/IDatastore";
 
 const log = Logger.create();
 
@@ -40,7 +41,7 @@ export class SharingDatastore extends AbstractDatastore implements Datastore, Wr
     private readonly delegate = new FirebaseDatastore();
 
     private docMetaData: string | null = null;
-    private docMeta: DocMeta | undefined;
+    private docMeta: IDocMeta | undefined;
     private docMetaRefs: DocMetaRef[] = [];
     private backendFileRefs: ReadonlyArray<BackendFileRef> = [];
 
@@ -49,7 +50,6 @@ export class SharingDatastore extends AbstractDatastore implements Datastore, Wr
         super();
         this.id = 'shared';
     }
-
 
     public async init(errorListener?: ErrorListener, opts?: DatastoreInitOpts): Promise<InitResult> {
 
@@ -70,11 +70,11 @@ export class SharingDatastore extends AbstractDatastore implements Datastore, Wr
                 this.docMetaRefs = [
                     {
                         fingerprint: this.fingerprint,
-                        docMeta: this.docMeta
+                        docMetaProvider: () => Promise.resolve(this.docMeta!)
                     }
                 ];
 
-                this.backendFileRefs = Datastores.toBackendFileRefs(this.docMeta);
+                this.backendFileRefs = BackendFileRefs.toBackendFileRefs(this.docMeta);
 
             }
 
@@ -112,7 +112,7 @@ export class SharingDatastore extends AbstractDatastore implements Datastore, Wr
         return this.docMetaData;
     }
 
-    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
         return this.docMetaRefs;
     }
 
@@ -157,7 +157,7 @@ export class SharingDatastore extends AbstractDatastore implements Datastore, Wr
         throw new Error("Not supported");
     }
 
-    public async getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): DocFileMeta {
         throw new Error("Not implemented yet");
     }
 

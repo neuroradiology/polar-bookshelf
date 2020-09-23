@@ -2,28 +2,29 @@
 import {DocMetaSnapshotEvent, DocMetaSnapshotEventListener, DatastoreConsistency, DocMetaMutation, MutationType} from './Datastore';
 import {DocMetaSnapshotEventListeners} from './DocMetaSnapshotEventListeners';
 import {MockDocMetas} from '../metadata/DocMetas';
-import {TestingTime} from '../test/TestingTime';
-import {ProgressTracker} from '../util/ProgressTracker';
+import {TestingTime} from 'polar-shared/src/test/TestingTime';
+import {ProgressTracker} from 'polar-shared/src/util/ProgressTracker';
 import {assertJSON} from '../test/Assertions';
 import {assert} from 'chai';
 import {UUIDs} from '../metadata/UUIDs';
-import {ASYNC_NULL_FUNCTION, NULL_FUNCTION} from '../util/Functions';
-import {AsyncProviders} from '../util/Providers';
+import {ASYNC_NULL_FUNCTION, NULL_FUNCTION} from 'polar-shared/src/util/Functions';
+import {AsyncProviders} from 'polar-shared/src/util/Providers';
 import waitForExpect from 'wait-for-expect';
 import {DocMetaFileRefs} from './DocMetaRef';
 import {MetadataSerializer} from '../metadata/MetadataSerializer';
-import {Reducers} from '../util/Reducers';
+import {Reducers} from 'polar-shared/src/util/Reducers';
 import {DocMeta} from '../metadata/DocMeta';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
 
 describe('DocMetaSnapshotEventListener', function() {
 
-    let docMeta: DocMeta;
+    let docMeta: IDocMeta;
 
     let docMetaSnapshotEvents: DocMetaSnapshotEvent[] = [];
 
     let deduplicatedListener: DocMetaSnapshotEventListener = ASYNC_NULL_FUNCTION;
 
-    const progressTracker = new ProgressTracker(1, 'test');
+    const progressTracker = new ProgressTracker({total: 1, id: 'test'});
     progressTracker.incr();
 
     const progress = progressTracker.peek();

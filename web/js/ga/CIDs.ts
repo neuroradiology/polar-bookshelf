@@ -1,13 +1,8 @@
 import {v4 as uuid} from 'uuid';
-import {remote} from 'electron';
-import {Provider} from '../util/Providers';
 import {CIDProviders} from './CIDProviders';
-import {Optional} from '../util/ts/Optional';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {CIDProvider} from './CIDProvider';
-import {Logger} from '../logger/Logger';
-import {isPresent} from '../Preconditions';
-
-const log = Logger.create();
+import {isPresent} from 'polar-shared/src/Preconditions';
 
 declare var window: Window;
 

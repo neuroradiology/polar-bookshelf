@@ -1,11 +1,11 @@
-import {forDict} from '../../util/Functions';
+import {forDict} from 'polar-shared/src/util/Functions';
 import {CacheEntriesHolder} from './CacheEntriesHolder';
 import {DiskCacheEntry} from './DiskCacheEntry';
 import {PHZCacheEntry} from './PHZCacheEntry';
 import {CachingPHZReader} from '../../phz/CachingPHZReader';
 
 import fs from 'fs';
-import {Dictionaries} from '../../util/Dictionaries';
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
 
 /**
  * Cache entry which is just buffered in memory.

@@ -1,43 +1,37 @@
 import * as React from 'react';
-import {Logger} from '../../../web/js/logger/Logger';
-import {isPresent} from '../../../web/js/Preconditions';
+import {isPresent} from 'polar-shared/src/Preconditions';
 import Moment from 'react-moment';
-import {ISODateTimeString} from '../../../web/js/metadata/ISODateTimeStrings';
-
-const log = Logger.create();
-
-export class DateTimeTableCell extends React.PureComponent<IProps, any> {
-
-    constructor(props: IProps, context: any) {
-        super(props, context);
-    }
-
-    public render() {
-
-        if (isPresent(this.props.datetime)) {
-
-            return (
-
-                <div className={this.props.className}>
-                    <Moment withTitle={true}
-                            titleFormat="D MMM YYYY hh:MM A"
-                            filter={(value) => value.replace(/^an? /g, '1 ')}
-                            fromNow ago>
-                        {this.props.datetime!}
-                    </Moment>
-                </div>
-
-            );
-
-        } else {
-            return null;
-        }
-
-    }
-
-}
+import {ISODateTimeString} from 'polar-shared/src/metadata/ISODateTimeStrings';
 
 interface IProps {
-    datetime: ISODateTimeString | null | undefined;
-    className: string;
+    readonly datetime: ISODateTimeString | null | undefined;
+    readonly className?: string;
+    readonly style?: React.CSSProperties;
 }
+
+export const DateTimeTableCell = React.memo((props: IProps) => {
+
+    if (isPresent(props.datetime)) {
+
+        return (
+
+            <Moment withTitle={true}
+                    className={props.className || ''}
+                    style={{
+                        whiteSpace: 'nowrap',
+                        userSelect: "none",
+                        ...props.style
+                    }}
+                    titleFormat="D MMM YYYY hh:MM A"
+                    // filter={(value) => value.replace(/^an? /g, '1 ')}
+                    fromNow ago>
+                {props.datetime!}
+            </Moment>
+
+        );
+
+    } else {
+        return null;
+    }
+
+});

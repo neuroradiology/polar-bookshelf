@@ -1,15 +1,11 @@
-import Joyride, {ACTIONS, CallBackProps, EVENTS, placement, STATUS} from 'react-joyride';
+import Joyride, {ACTIONS, CallBackProps, EVENTS, STATUS} from 'react-joyride';
 import * as React from 'react';
 import {LifecycleToggle} from '../../ui/util/LifecycleToggle';
 import {LifecycleEvents} from '../../ui/util/LifecycleEvents';
-import {RendererAnalytics} from '../../ga/RendererAnalytics';
-import {Feedback} from '../../ui/feedback/Feedback';
-import {SplitLayout, SplitLayoutLeft} from '../../ui/split_layout/SplitLayout';
-import {SplitLayoutRight} from '../../ui/split_layout/SplitLayoutRight';
-import {Logger} from '../../logger/Logger';
-import {LoadExampleDocs} from './onboarding/LoadExampleDocs';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {EnhancedStep, JoyrideTours} from '../../ui/tours/JoyrideTours';
-import {AppRuntime} from '../../AppRuntime';
+import {Devices} from "polar-shared/src/util/Devices";
+import {AppRuntime} from "polar-shared/src/util/AppRuntime";
 
 const log = Logger.create();
 
@@ -63,6 +59,10 @@ export class RepositoryTour extends React.Component<IProps, IState> {
     }
 
     public render() {
+
+        if (! Devices.isDesktop()) {
+            return null;
+        }
 
         return (
 
@@ -142,32 +142,25 @@ export class RepositoryTour extends React.Component<IProps, IState> {
                     <h2 className="text-center">Welcome to Polar!</h2>
 
                     <p>
-                        We're going to give you a quick tour of how to use the
-                        main features in Polar.
-                    </p>
-
-                    <p>
                         Polar allows you to:
                     </p>
 
                     <ul>
 
-                        <li>Keep all your documents in one place.</li>
+                        <li><b>Keep all your reading</b> in one place.</li>
 
-                        <li>Easily keep track of your reading with <b>pagemarks</b> and <b>stats tracking</b>.</li>
+                        <li><b>Track all your reading</b> statistics.</li>
 
-                        <li><b>Annotate</b>, <b>tag</b>, and <span className="text-dark" style={{backgroundColor: 'yellow'}}><b>highlight</b></span> all your documents and build a personal knowledge repository.</li>
+                        <li><b>Build a personal knowledge repository</b> with <span className="text-dark" style={{backgroundColor: 'rgba(255,255,0.3)'}}><b>highlights</b></span>, tags, and annotations.</li>
+
+                        <li><b>Permanently remember</b> facts using spaced repetition and incremental reading</li>
 
                     </ul>
 
                     <p>
                         Additionally, Polar supports <b>not just PDF</b> documents
                         but capturing <b>web content</b> and storing
-                        it offline in your archive in perpetuity.
-                    </p>
-
-                    <p>
-                        The tour should take about 60 seconds.
+                        it offline in your archive - forever!
                     </p>
 
                 </div>,
@@ -191,19 +184,18 @@ export class RepositoryTour extends React.Component<IProps, IState> {
                         and major browsers) and is <b>fully cloud aware</b>.
                     </p>
 
-                    <p>
-                        If you use the desktop version of Polar you can enable
-                        cloud sync which will <b>keep all your documents in
-                        sync</b> across all your devices and the web - and in
-                        near realtime!
-                    </p>
+                    {/*<p>*/}
+                    {/*    If you use the desktop version of Polar you can enable*/}
+                    {/*    cloud sync which will <b>keep all your documents in*/}
+                    {/*    sync</b> across all your devices and the web - and in*/}
+                    {/*    near realtime!*/}
+                    {/*</p>*/}
 
-                    <p>
-                        Note that the web version is missing a few features
-                        including Anki sync and web page capture and only
-                        supports PDF documents at the moment.
-                    </p>
-
+                    {/*<p>*/}
+                    {/*    Note that the web version is missing a few features*/}
+                    {/*    including Anki sync and web page capture and only*/}
+                    {/*    supports PDF documents at the moment.*/}
+                    {/*</p>*/}
 
                 </div>,
                 image: "/web/assets/images/web.svg",
@@ -211,48 +203,38 @@ export class RepositoryTour extends React.Component<IProps, IState> {
                 disabled: AppRuntime.isElectron()
             }),
 
-            JoyrideTours.createImageStep({
-                target: '#doc-repo-table .rt-tbody > div:nth-child(-n+1)',
-                title: <Title>Document Repository</Title>,
+            // JoyrideTours.createImageStep({
+            //     target: '#nav-tab-document-repository',
+            //     title: <Title>Document Repository</Title>,
+            //     content: <div>
+            //         <p>
+            //             Your documents are kept here in
+            //             the <Term>document repository</Term> and
+            //             can be opened by <Term>double clicking</Term>.
+            //         </p>
+            //
+            //         <p>
+            //             We went ahead and added some <b>sample documents</b> so you can
+            //             see what Polar looks like in action.  You can just
+            //             delete them once the tour is finished.
+            //         </p>
+            //     </div>,
+            //     image: "/web/assets/images/files.svg"
+            // }),
+
+            {
+                target: '#add-tags-dropdown',
+                title: <Title>Create Folders and Tags</Title>,
+                disableBeacon: true,
                 content: <div>
                     <p>
-                        Your documents are kept here in
-                        the <Term>document repository</Term> and
-                        can be opened by <Term>double clicking</Term>.
-                    </p>
-
-                    <p>
-                        We went ahead and added some <b>sample documents</b> so you can
-                        see what Polar looks like in action.  You can just
-                        delete them once the tour is finished.
+                        You can create folders or tags by selecting this
+                        button or right clicking on the sidebar.
                     </p>
                 </div>,
-                image: "/web/assets/images/files.svg"
-            }),
 
-            JoyrideTours.createImageStep({
-                target: '#add-content-dropdown',
-                title: <Title>Add Documents</Title>,
-                content: <div>
-                    <p>
-                        Documents can easily be added by clicking the <Term>Add</Term> button
-                        and you can import documents individually or in bulk from
-                        a local directory.
-                    </p>
-
-                    <p>
-                        You can also just drag and drop files onto the document
-                        repository as well.
-                    </p>
-
-                    <p>
-                        Once the tour is over you'll probably want to use this
-                        feature to add any documents you're currently reading.
-                    </p>
-                </div>,
-                image: "/web/assets/images/add-file.svg"
-            }),
-
+                // placement: "bottom",
+            },
             JoyrideTours.createImageStep({
                 target: '#enable-cloud-sync, #cloud-sync-dropdown',
                 title: <Title>Cloud Sync</Title>,
@@ -270,56 +252,56 @@ export class RepositoryTour extends React.Component<IProps, IState> {
                     </p>
                 </div>,
                 image:
-                    <Icon className="fas fa-cloud-upload-alt"/>
+                    <Icon className="fas fa-cloud-upload-alt"/>,
+                disabled: ! AppRuntime.isElectron()
 
             }),
-
-            JoyrideTours.createImageStep({
-                target: '#links-dropdown',
-                title: <Title>Links</Title>,
-                content: <div>
-                    <p>
-                        We include direct links to additional tools including
-                        our <Term>Chrome Extension</Term> and <Term>chat</Term> to
-                        enable you to discuss Polar live with the developers and
-                        other users.
-                    </p>
-
-                </div>,
-                image:
-                    <Icon className="fas fa-link"/>
-
-            }),
+            //
+            // JoyrideTours.createImageStep({
+            //     target: '#links-dropdown',
+            //     title: <Title>Links</Title>,
+            //     content: <div>
+            //         <p>
+            //             We include direct links to additional tools including
+            //             our <Term>Chrome Extension</Term> and <Term>chat</Term> to
+            //             enable you to discuss Polar live with the developers and
+            //             other users.
+            //         </p>
+            //
+            //     </div>,
+            //     image:
+            //         <Icon className="fas fa-link"/>
+            //
+            // }),
 
             {
                 target: '.doc-table-col-progress',
                 title: <Title>Reading Progress</Title>,
                 disableBeacon: true,
                 content: <div>
-                    Each document has a progress associated with it which is
-                    derived from pagemarks. Pagemarks are similar to bookmarks
-                    but manually updated on each document while you read.
+                    <b>Track your reading progress</b> in each document
+                    with pagemarks (manually now, soon to be automatic).
                 </div>,
 
                 // placement: "bottom",
             },
 
-            JoyrideTours.createImageStep({
-                target: '.doc-table-col-tags',
-                title: <Title>Tags</Title>,
-                content: <div>
-                    <p>
-                        Each document can be tagged to enable
-                        filtering and allow you to easily manage your documents.
-                    </p>
-
-                    <p>Tags for documents are also assigned to your annotations.</p>
-
-                </div>,
-                image:
-                    <Icon className="fa fa-tag"/>
-
-            }),
+            // JoyrideTours.createImageStep({
+            //     target: '.doc-table-col-tags',
+            //     title: <Title>Tags</Title>,
+            //     content: <div>
+            //         <p>
+            //             Each document can be tagged to enable
+            //             filtering and allow you to easily manage your documents.
+            //         </p>
+            //
+            //         <p>Tags for documents are also assigned to your annotations.</p>
+            //
+            //     </div>,
+            //     image:
+            //         <Icon className="fa fa-tag"/>
+            //
+            // }),
 
 
             {
@@ -327,27 +309,29 @@ export class RepositoryTour extends React.Component<IProps, IState> {
                 disableBeacon: true,
                 content: <div>
 
-                    <p>
-                        Documents can
-                        be <Term>tagged</Term>, <Term>flagged</Term>, <Term>archived</Term> and <Term>deleted</Term> by using
-                        these buttons to the right.
-                    </p>
+                    Documents can be <b>tagged, flagged, archived or deleted</b>.
 
-                    <p>
-                         The <Term>tag</Term> button allow you to assign new <b><i>tags</i></b> a document
-                    </p>
+                    {/*<p>*/}
+                    {/*    Documents can*/}
+                    {/*    be <Term>tagged</Term>, <Term>flagged</Term>, <Term>archived</Term> and <Term>deleted</Term> by using*/}
+                    {/*    these buttons to the right.*/}
+                    {/*</p>*/}
 
-                    <p>
-                         The <Term>flag</Term> button allow you to mark important
-                         documents.  Once flagged you can use the <Term>filter bar</Term> to
-                         show only flagged documents.
-                    </p>
+                    {/*<p>*/}
+                    {/*     The <Term>tag</Term> button allow you to assign new <b><i>tags</i></b> a document*/}
+                    {/*</p>*/}
 
-                    <p>
-                        The <Term>archive</Term> button allow you to
-                        hide a document once read.  It's usually best to
-                        archive a document once it's been read.
-                    </p>
+                    {/*<p>*/}
+                    {/*     The <Term>flag</Term> button allow you to mark important*/}
+                    {/*     documents.  Once flagged you can use the <Term>filter bar</Term> to*/}
+                    {/*     show only flagged documents.*/}
+                    {/*</p>*/}
+
+                    {/*<p>*/}
+                    {/*    The <Term>archive</Term> button allow you to*/}
+                    {/*    hide a document once read.  It's usually best to*/}
+                    {/*    archive a document once it's been read.*/}
+                    {/*</p>*/}
 
                 </div>,
                 styles: {
@@ -357,268 +341,83 @@ export class RepositoryTour extends React.Component<IProps, IState> {
                 },
                 // placement: "bottom",
             },
-
-            {
-                target: '#filter-bar',
-                disableBeacon: true,
-                content: <div>
-
-                    <p>
-                        The <Term>filter bar</Term> allows you to configure
-                        which documents are visible.
-                    </p>
-
-                    <p>
-                        You can hide/show documents that are flagged, archived and
-                        also filter by tags or search by title.
-                    </p>
-
-                </div>,
-                styles: {
-                    tooltip: {
-                        width: '650px'
-                    }
-                },
-            },
-
-
-            {
-                target: '#toggle-sidebar',
-                content: <div>
-
-                    <Term>Click</Term> this button to display the sidebar.
-
-                </div>,
-                spotlightClicks: true,
-                disableBeacon: true,
-                placement: 'right',
-                hideFooter: true,
-                hideCloseButton: true,
-                autoNext: true,
-            },
-            // TODO: needs to be positioned about a 3rd of the way down the
-            // page...
-            {
-                title: <Title>Sidebar</Title>,
-                target: '.repo-sidebar section[data-expanded=true]',
-                content: <div>
-                    The <Term>sidebar</Term> allows you to select different
-                    views including
-                    the <Term>annotation</Term> and <Term>statistics</Term> views.
-                </div>,
-                disableBeacon: true,
-                placement: 'right-start',
-                offset: 10,
-                spotlightPadding: 0,
-                hideBackButton: true
-            },
-            {
-                title: <Title>Annotations</Title>,
-                target: 'section[data-expanded=true] #sidebar-item-annotations',
-                content: <div>
-                    Now <Term>click here</Term> to view the <Term>annotations view</Term>.
-
-                </div>,
-                spotlightClicks: true,
-                disableBeacon: true,
-                placement: 'right',
-                hideFooter: true,
-                spotlightPadding: 0,
-                styles: {
-                    options: {
-                        zIndex: Z_INDEX
-                    }
-                },
-                autoNext: true
-            },
-
-            JoyrideTours.createImageStep({
-                target: '.annotations-view header',
-                title: <Title>Annotations View</Title>,
-                content: <div>
-                    <p>
-                        This is the <Term>annotations view</Term>.  It allows you
-                        to view all your annotations including highlights,
-                        comments, and flashcards.
-                    </p>
-                </div>,
-                image: "/web/assets/images/doc.svg",
-                placement: 'center',
-                hideBackButton: true
-            }),
-
-            {
-                target: '#toggle-sidebar',
-                content: <div>
-
-                    <p>
-                        Now let's go to the <Term>statistics view.</Term>
-                    </p>
-
-                    <p>
-                        <Term>Click</Term> this button to display the sidebar.
-                    </p>
-
-                </div>,
-                spotlightClicks: true,
-                disableBeacon: true,
-                placement: 'right',
-                hideFooter: true,
-                hideCloseButton: true,
-                autoNext: true,
-            },
-
-
-            {
-                title: <Title>Sidebar</Title>,
-                target: 'section[data-expanded=true] #sidebar-item-stats',
-                content: <div>
-                    Now <Term>click here</Term> to view the <Term>statistics view</Term>.
-
-                </div>,
-                spotlightClicks: true,
-                disableBeacon: true,
-                placement: 'right',
-                hideFooter: true,
-                spotlightPadding: 0,
-                styles: {
-                    options: {
-                        zIndex: Z_INDEX
-                    }
-                },
-                autoNext: true
-            },
-
-            JoyrideTours.createImageStep({
-                target: '.statistics-view header',
-                title: <Title>Statistics View</Title>,
-                content: <div>
-                    <p>
-                        This is the <Term>statistics view</Term>.  It allows you
-                        to view importants statistics regarding your reading,
-                        documents, and annotations including the rate of new
-                        documents and statistics on your tags.
-                    </p>
-                </div>,
-                image: "/web/assets/images/statistics.svg",
-                hideBackButton: true,
-                placement: 'center',
-            }),
-
-            {
-                title: <Title>Daily Reading Progress</Title>,
-                target: '#reading-progress-table',
-                content: <div>
-                    <p>
-                        The <Term>reading progress</Term> metric allows you to track
-                        how often you're reading to encourage you to hit your goals.
-                    </p>
-
-                    <p>
-                        Each column is one week and we display 52 weeks to
-                        represent the entire year.
-                    </p>
-
-                </div>,
-                disableBeacon: true,
-            },
-
-            {
-                target: '#toggle-sidebar',
-                content: <div>
-
-                    <p>
-                        Now let's go back to the <Term>documents view.</Term>
-                    </p>
-
-                    <p>
-                        <Term>Click</Term> this button to display the sidebar.
-                    </p>
-
-                </div>,
-                spotlightClicks: true,
-                disableBeacon: true,
-                placement: 'right',
-                hideFooter: true,
-                hideCloseButton: true,
-                autoNext: true,
-            },
-
-
-            {
-                title: <Title>Select documents view...</Title>,
-                target: 'section[data-expanded=true] #sidebar-item-documents',
-                content: <div>
-                    Now <Term>click</Term> to view the <Term>documents view</Term>.
-
-                </div>,
-                spotlightClicks: true,
-                disableBeacon: true,
-                placement: 'right',
-                hideFooter: true,
-                spotlightPadding: 0,
-                styles: {
-                    options: {
-                        zIndex: Z_INDEX
-                    }
-                },
-                autoNext: true,
-                hideBackButton: true
-            },
-
-            // TODO this breaks HARD unless we have the example documents loaded
-            // and maybe I should consider just selecting the first or Nth
-            // document which would always work for the most part.
             //
-            // :nth-child(4n) could/should work.
+            // {
+            //     target: '#filter-bar',
+            //     disableBeacon: true,
+            //     content: <div>
+            //
+            //         <p>
+            //             The <Term>filter bar</Term> allows you to configure
+            //             which documents are visible.
+            //         </p>
+            //
+            //         <p>
+            //             You can hide/show documents that are flagged, archived and
+            //             also filter by tags or search by title.
+            //         </p>
+            //
+            //         <p>
+            //             You can also sort by the columns to build queues to determine what you should read next.
+            //             Flags can be used to manage your primary/active reading.
+            //         </p>
+            //
+            //     </div>,
+            //     styles: {
+            //         tooltip: {
+            //             width: '650px'
+            //         }
+            //     },
+            // },
 
-            JoyrideTours.createImageStep({
-                target: `#doc-table div[data-doc-fingerprint='${LoadExampleDocs.MAIN_ANNOTATIONS_EXAMPLE_FINGERPRINT}']`,
-                title: <Title>Open a document</Title>,
+            // {
+            //     title: <Title>Annotations</Title>,
+            //     target: '#nav-tab-annotations',
+            //     content: <div>
+            //         The <Term>annotations view</Term> allows you to view all your annotations including highlights,
+            //         comments, and flashcards.
+            //     </div>,
+            // },
+            // JoyrideTours.createImageStep({
+            //     target: '#nav-tab-statistics',
+            //     title: <Title>Statistics View</Title>,
+            //     content: <div>
+            //         <p>
+            //             The <Term>statistics view</Term> allows you
+            //             to view important statistics regarding your reading,
+            //             documents, and annotations including the rate of new
+            //             documents and statistics on your tags.
+            //         </p>
+            //     </div>,
+            //     image: "/web/assets/images/statistics.svg",
+            // }),
+
+            // JoyrideTours.createImageStep({
+            //     target: 'header',
+            //     content: <div>
+            //
+            //         <h2>Thanks for taking the Tour</h2>
+            //
+            //         <p>
+            //             You next step needs to be adding documents.  Just click the <Term>add</Term> button or install
+            //             the chrome extension to capture web pages.
+            //         </p>
+            //
+            //     </div>,
+            //     image: "/icon.png",
+            //     placement: 'center'
+            //
+            // }),
+            {
+                target: '#add-content-dropdown',
+                title: <Title>Add Documents</Title>,
                 content: <div>
-
                     <p>
-                        Let's open a document.
-                    </p>
-
-                    <p>
-                        Go ahead and <Term>double click</Term> on the
-                        highlighted document row and a new window will open.
-                    </p>
-
-                    <p>
-                        This specific document has some example annotations.
+                        Get started now by <b>clicking here to upload your first document</b>.
                     </p>
 
                 </div>,
-                spotlightClicks: true,
-                hideBackButton: true,
-                image:
-                    <Icon className="far fa-file-pdf"/>
-            }),
-
-            // TODO: auto advance to this once the document has been opened and
-            // we 've done the viewer tour and I think this should be more of a
-            // checklist.
-
-
-            JoyrideTours.createImageStep({
-                target: 'header',
-                content: <div>
-
-                    <h2>Thanks for Taking the Tour</h2>
-
-                    <p>
-                        From time to time we'll check-in to see if Polar is
-                        working for you and whether you have any other
-                        suggestions to improve Polar for your use case.
-                    </p>
-
-                </div>,
-                image: "/icon.png",
-                placement: 'center'
-
-            }),
+            },
 
             // {
             //     target: 'header',
@@ -702,7 +501,7 @@ export class RepositoryTour extends React.Component<IProps, IState> {
 
         this.callback = callbackProps;
 
-        RendererAnalytics.event({category: 'tour', action: 'did-step-' + callbackProps.index});
+        // Analytics.event({category: 'tour', action: 'did-step-' + callbackProps.index});
 
         const step: EnhancedStep = callbackProps.step;
 
@@ -760,18 +559,17 @@ export class RepositoryTour extends React.Component<IProps, IState> {
 
             try {
 
-                // FIXME?
                 // this.setState({ run: false, stepIndex: 0 });
 
                 switch (callbackProps.status) {
                     case STATUS.SKIPPED:
-                        RendererAnalytics.event({category: 'tour-result', action: 'skipped'});
-                        RendererAnalytics.event({category: 'tour-skip', action: 'skipped-at-step-' + callbackProps.index});
+                        // Analytics.event({category: 'tour-result', action: 'skipped'});
+                        // Analytics.event({category: 'tour-skip', action: 'skipped-at-step-' + callbackProps.index});
 
                         LifecycleToggle.mark(LifecycleEvents.TOUR_SKIPPED);
                         break;
                     case STATUS.FINISHED:
-                        RendererAnalytics.event({category: 'tour-result', action: 'finished'});
+                        // Analytics.event({category: 'tour-result', action: 'finished'});
 
                         LifecycleToggle.mark(LifecycleEvents.TOUR_FINISHED);
                         break;

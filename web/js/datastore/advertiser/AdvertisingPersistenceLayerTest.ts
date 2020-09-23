@@ -2,11 +2,11 @@ import {AdvertisingPersistenceLayer} from './AdvertisingPersistenceLayer';
 import {DefaultPersistenceLayer} from '../DefaultPersistenceLayer';
 import {MemoryDatastore} from '../MemoryDatastore';
 import {MockDocMetas} from '../../metadata/DocMetas';
-import {IDocInfo} from '../../metadata/DocInfo';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {assertJSON} from '../../test/Assertions';
 import {MockAdvertisingPersistenceLayer} from './MockAdvertisingPersistenceLayer';
-import {TestingTime} from '../../test/TestingTime';
-import {Dictionaries} from '../../util/Dictionaries';
+import {TestingTime} from 'polar-shared/src/test/TestingTime';
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
 
 describe('AdvertisingPersistenceLayer', function() {
 

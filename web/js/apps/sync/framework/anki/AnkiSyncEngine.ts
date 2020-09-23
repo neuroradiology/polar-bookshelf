@@ -1,26 +1,22 @@
 import {SyncEngine} from '../SyncEngine';
 import {SyncEngineDescriptor} from '../SyncEngineDescriptor';
-import {DocMetaSet} from '../../../../metadata/DocMetaSet';
 import {SyncProgressListener} from '../SyncProgressListener';
 import {PendingSyncJob} from '../SyncJob';
-import {DocMeta} from '../../../../metadata/DocMeta';
-import {Flashcard} from '../../../../metadata/Flashcard';
-import {PageInfo} from '../../../../metadata/PageInfo';
-import {Dictionaries} from '../../../../util/Dictionaries';
-import * as _ from "lodash";
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
 import {DeckDescriptor} from './DeckDescriptor';
 import {NoteDescriptor} from './NoteDescriptor';
-import {Optional} from '../../../../util/ts/Optional';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {PendingAnkiSyncJob} from './AnkiSyncJob';
 import {DocInfos} from '../../../../metadata/DocInfos';
-import {Tags} from '../../../../tags/Tags';
-import {DocInfo} from '../../../../metadata/DocInfo';
+import {Tags} from 'polar-shared/src/tags/Tags';
 import {DocMetaSupplierCollection} from '../../../../metadata/DocMetaSupplierCollection';
-import {Sets} from '../../../../util/Sets';
-import {FlashcardDescriptor} from './FlashcardDescriptor';
+import {SetArrays} from 'polar-shared/src/util/SetArrays';
 import {FlashcardDescriptors} from './FlashcardDescriptors';
 import {AnkiConnectFetch} from './AnkiConnectFetch';
 import {Decks} from './Decks';
+import {ModelNamesClient} from "./clients/ModelNamesClient";
+import {ModelNames} from "./ModelNames";
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
 
 /**
  * Sync engine for Anki.  Takes cards registered in a DocMeta and then transfers
@@ -37,9 +33,11 @@ export class AnkiSyncEngine implements SyncEngine {
         // determine how to connect to Anki
         await AnkiConnectFetch.initialize();
 
+        await this.verifyRequiredModels();
+
         const noteDescriptors = await this.toNoteDescriptors(deckNameStrategy, docMetaSupplierCollection);
 
-        const deckNames = Sets.toSet(noteDescriptors.map(noteDescriptor => noteDescriptor.deckName));
+        const deckNames = SetArrays.toSet(noteDescriptors.map(noteDescriptor => noteDescriptor.deckName));
 
         const deckDescriptors: DeckDescriptor[] = Array.from(deckNames)
             .map(deckName => {
@@ -48,6 +46,12 @@ export class AnkiSyncEngine implements SyncEngine {
 
         return new PendingAnkiSyncJob(progress, deckDescriptors, noteDescriptors);
 
+    }
+
+    private async verifyRequiredModels() {
+        const modelNotesClient = new ModelNamesClient();
+        const modelNames = await modelNotesClient.execute();
+        ModelNames.verifyRequired(modelNames);
     }
 
     protected async toNoteDescriptors(deckNameStrategy: DeckNameStrategy,
@@ -66,11 +70,13 @@ export class AnkiSyncEngine implements SyncEngine {
                 fields[key] = Optional.of(value.HTML || value.TEXT || value.MARKDOWN).getOrElse('');
             });
 
-            const docInfoTags = Optional.of(flashcardDescriptor.docMeta.docInfo.tags);
+            const annotationTagsMap = flashcardDescriptor.flashcard.tags || {};
+            const docInfoTagsMap = flashcardDescriptor.docMeta.docInfo.tags || {};
 
-            const tags = docInfoTags.map(current => Object.values(current))
-                       .getOrElse([])
-                       .map(tag => tag.label);
+            const tagsMap = {...docInfoTagsMap, ...annotationTagsMap};
+
+            const tags = Object.values(tagsMap)
+                               .map(tag => tag.label);
 
             // TODO: implement more model types... not just basic.
 
@@ -88,7 +94,7 @@ export class AnkiSyncEngine implements SyncEngine {
 
     }
 
-    protected computeDeckName(deckNameStrategy: DeckNameStrategy, docInfo: DocInfo): string {
+    protected computeDeckName(deckNameStrategy: DeckNameStrategy, docInfo: IDocInfo): string {
 
         let deckName: string | undefined;
 

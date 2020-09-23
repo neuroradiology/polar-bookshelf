@@ -1,13 +1,7 @@
 import * as React from 'react';
-import {Logger} from '../../../../logger/Logger';
-import Button from 'reactstrap/lib/Button';
 import {Flashcard} from '../../../../metadata/Flashcard';
-
-const log = Logger.create();
-
-class Styles {
-
-}
+import Button from "@material-ui/core/Button";
+import {MUIButtonBar} from "../../../../mui/MUIButtonBar";
 
 export class FlashcardButtons extends React.PureComponent<IProps, IState> {
 
@@ -23,20 +17,19 @@ export class FlashcardButtons extends React.PureComponent<IProps, IState> {
 
         return (
 
-            <div>
+            <MUIButtonBar>
 
                 {this.props.cancelButton}
 
                 <Button color="primary"
-                        size="sm"
-                        className="ml-1"
+                        variant="contained"
                         onClick={() => this.props.onCreate()}>
 
                     {this.props.existingFlashcard ? 'Update' : 'Create'}
 
                 </Button>
 
-            </div>
+            </MUIButtonBar>
 
         );
 

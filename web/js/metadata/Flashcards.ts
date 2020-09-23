@@ -1,20 +1,23 @@
 import {Dicts} from '../util/Dicts';
-import {FlashcardType} from './FlashcardType';
-import {Hashcodes} from '../Hashcodes';
-import {Preconditions} from '../Preconditions';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
+import {Hashcodes} from 'polar-shared/src/util/Hashcodes';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 import {Flashcard} from './Flashcard';
-import {Texts} from './Texts';
-import {Text} from './Text';
-import {TextType} from './TextType';
-import {DocMeta} from './DocMeta';
-import {ISODateTimeStrings} from './ISODateTimeStrings';
+import {Texts} from 'polar-shared/src/metadata/Texts';
+import {Text} from 'polar-shared/src/metadata/Text';
+import {TextType} from 'polar-shared/src/metadata/TextType';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
 import {HTMLString} from '../util/HTMLString';
-import {Ref} from './Refs';
+import {Ref} from 'polar-shared/src/metadata/Refs';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
 
 export class Flashcards {
 
+    public static CLOZE_ARCHETYPE = "76152976-d7ae-4348-9571-d65e48050c3f";
+    public static FRONT_BACK_ARCHETYPE = "9d146db1-7c31-4bcf-866b-7b485c4e50ea";
+
     public static createMutable(flashcard: Flashcard): Flashcard {
-        // TODO: an idiosyncracy of the proxies system is that it mutates the
+        // TODO: an idiosyncrasy of the proxies system is that it mutates the
         // object so if it's read only it won't work.  This is a bug with
         // Proxies so I need to also fix that bug there in the future.
         return <Flashcard> {...flashcard};
@@ -22,7 +25,7 @@ export class Flashcards {
 
     public static create(type: FlashcardType, fields: {[key: string]: Text}, archetype: string, ref: Ref) {
 
-        Preconditions.assertNotNull(fields, "fields");
+        Preconditions.assertPresent(fields, "fields");
 
         const created = ISODateTimeStrings.create();
         const lastUpdated = created;
@@ -38,7 +41,7 @@ export class Flashcards {
 
     public static createCloze(text: HTMLString, ref: Ref) {
 
-        const archetype = "76152976-d7ae-4348-9571-d65e48050c3f";
+        const archetype = this.CLOZE_ARCHETYPE;
 
         const fields: {[key: string]: Text } = {};
 
@@ -53,32 +56,12 @@ export class Flashcards {
      */
     public static createFrontBack(front: HTMLString, back: HTMLString, ref: Ref) {
 
-        const archetype = "9d146db1-7c31-4bcf-866b-7b485c4e50ea";
+        const archetype = this.FRONT_BACK_ARCHETYPE;
 
         const fields: {[key: string]: Text } = {};
 
         fields.front = Texts.create(front, TextType.HTML);
         fields.back = Texts.create(back, TextType.HTML);
-
-        return Flashcards.create(FlashcardType.BASIC_FRONT_BACK, fields, archetype, ref);
-
-    }
-
-    /**
-     * Create a flashcard from the raw, completed, schema form data.
-     */
-    public static createFromSchemaFormData(formData: {[key: string]: string }, archetype: string, ref: Ref) {
-
-        // TODO: the markdown needs to be converted to HTML as well.  The text
-        // we get from the markdown widget is markdown. Not HTML and I confirmed
-        // this is the case.
-
-        const fields: {[key: string]: Text } = {};
-
-        // now work with the formData to create the fields.
-        Dicts.ownKeys(formData, (key, value) => {
-            fields[key] = Texts.create(value, TextType.HTML);
-        });
 
         return Flashcards.create(FlashcardType.BASIC_FRONT_BACK, fields, archetype, ref);
 
@@ -103,7 +86,7 @@ export class MockFlashcards {
     /**
      * Attach mock flashcards on the given DocMeta for testing
      */
-    public static attachFlashcards(docMeta: DocMeta) {
+    public static attachFlashcards(docMeta: IDocMeta) {
 
         let idx = 0;
 

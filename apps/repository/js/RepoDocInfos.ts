@@ -1,9 +1,11 @@
-import {isPresent, Preconditions} from '../../../web/js/Preconditions';
-import {IDocInfo} from '../../../web/js/metadata/DocInfo';
-import {Optional} from '../../../web/js/util/ts/Optional';
+import {isPresent, Preconditions} from 'polar-shared/src/Preconditions';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {RepoDocInfo} from './RepoDocInfo';
-import {ISODateTimeString} from '../../../web/js/metadata/ISODateTimeStrings';
 import {DocInfos} from '../../../web/js/metadata/DocInfos';
+import {Tag} from "polar-shared/src/tags/Tags";
+import {SortFunctions} from "./doc_repo/util/SortFunctions";
+import {Objects} from "polar-shared/src/util/Objects";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
 
 export class RepoDocInfos {
 
@@ -11,12 +13,15 @@ export class RepoDocInfos {
         return isPresent(repoDocInfo.filename);
     }
 
-    public static convert(docInfo: IDocInfo): RepoDocInfo {
+    public static convert(docMeta: IDocMeta): RepoDocInfo {
 
-        Preconditions.assertPresent(docInfo, "docInfo");
+        Preconditions.assertPresent(docMeta, "docMeta");
+
+        const docInfo = docMeta.docInfo;
 
         return {
 
+            id: docInfo.fingerprint,
             fingerprint: docInfo.fingerprint,
 
             // TODO: we should map this to also filter out '' and ' '
@@ -49,8 +54,7 @@ export class RepoDocInfos {
                 .validateBoolean()
                 .getOrElse(false),
 
-            tags: Optional.of(docInfo.tags)
-                .getOrElse({}),
+            tags: docInfo.tags || {},
 
             site: Optional.of(docInfo.url)
                 .map(url => new URL(url).hostname)
@@ -63,7 +67,8 @@ export class RepoDocInfos {
 
             hashcode: docInfo.hashcode,
 
-            docInfo
+            docInfo,
+            docMeta
 
         };
 
@@ -89,6 +94,32 @@ export class RepoDocInfos {
         }
 
         return current;
+
+    }
+
+    public static toTags(repoDocInfo?: RepoDocInfo): Tag[] {
+
+        if (repoDocInfo) {
+            return Object.values(repoDocInfo.tags || {});
+        }
+
+        return [];
+
+    }
+
+    /**
+     * Sort doc infos and handle ties by using the added field.
+     */
+    public static sort(a: RepoDocInfo, b: RepoDocInfo, formatRecord: (repoDocInfo: RepoDocInfo) => string) {
+
+        const cmp = SortFunctions.compareWithEmptyStringsLast(a, b, formatRecord);
+
+        if (cmp !== 0) {
+            return cmp;
+        }
+
+        // for ties use the date added...
+        return Objects.toObjectSTR(a.added).localeCompare(Objects.toObjectSTR(b.added));
 
     }
 

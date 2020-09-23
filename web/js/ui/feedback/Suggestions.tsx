@@ -1,14 +1,18 @@
 import * as React from 'react';
-import Button from 'reactstrap/lib/Button';
-import Input from 'reactstrap/lib/Input';
 import {TakeExtendedSurveyButton} from './TakeExtendedSurveyButton';
+import {Analytics} from "../../analytics/Analytics";
+import Button from "@material-ui/core/Button";
+import Input from "@material-ui/core/Input";
 
 export class Suggestions extends React.Component<IProps, IState> {
+
+    private value: string = "";
 
     constructor(props: any, context: any) {
         super(props, context);
 
         this.onDone = this.onDone.bind(this);
+        this.onCancel = this.onCancel.bind(this);
 
         this.state = {
             completed: false
@@ -21,9 +25,9 @@ export class Suggestions extends React.Component<IProps, IState> {
         const Description = () => {
 
             if (this.props.description) {
-                return <p className="text-center">{this.props.description}</p>;
+                return this.props.description;
             } else {
-                return <div></div>;
+                return null;
             }
 
         };
@@ -31,34 +35,44 @@ export class Suggestions extends React.Component<IProps, IState> {
         const Form = () => {
 
             return <div style={{
-                            width: '600px',
                             position: 'fixed',
-                            right: 25,
                             bottom: 25,
                             zIndex: 9999,
+                            width: '100%'
                         }}
-                        className="border rounded shadow bg-white p-3">
+                        className="">
 
-                <h3 className="text-center">{this.props.title}</h3>
+                <div style={{
+                         width: '600px',
+                         backgroundColor: "var(--primary-background-color)"
+                     }}
+                     className="border rounded shadow p-3 ml-auto mr-auto">
 
-                <div className="ml-auto mr-auto">
-                    <Description/>
-                </div>
+                    <h3>{this.props.title}</h3>
 
-                <Input type="textarea"
-                       autofocus
-                       style={{height: '8em'}}/>
+                    <div className="ml-auto mr-auto">
+                        <Description/>
+                    </div>
 
+                    <Input type="textarea"
+                           onChange={event => this.value = event.target.value}
+                           style={{height: '8em'}}/>
 
-                <div className="mt-2" style={{display: 'flex'}}>
+                    <div className="mt-2" style={{display: 'flex'}}>
 
-                    <div className="ml-auto">
+                        <div className="ml-auto">
 
-                        <TakeExtendedSurveyButton/>
+                            <TakeExtendedSurveyButton/>
 
-                        <Button size="md"
-                                color="primary"
-                                onClick={() => this.onDone()}>Send Feedback</Button>
+                            <Button variant="contained"
+                                    onClick={() => this.onCancel()}>Cancel</Button>
+
+                            <Button color="primary"
+                                    variant="contained"
+                                    className="ml-1"
+                                    onClick={() => this.onDone()}>Send Feedback</Button>
+
+                        </div>
 
                     </div>
 
@@ -76,25 +90,36 @@ export class Suggestions extends React.Component<IProps, IState> {
 
     }
 
+    private onCancel() {
+
+        if (! this.props.noEvent) {
+
+            Analytics.event({
+                category: this.props.category,
+                action: 'cancel-suggestion',
+            });
+
+        }
+
+        this.markCompleted();
+
+    }
+
     private onDone() {
 
         if (! this.props.noEvent) {
 
-            // RendererAnalytics.event({
-            //     category: this.props.category,
-            //     action: `${rating}`,
-            //     value: rating
-            // });
-
-            // console.log(`Sent feedback for category ${this.props.category}:
-            // ${rating}`);
+            Analytics.event({
+                category: this.props.category,
+                action: 'sent-suggestion',
+            });
 
         }
 
         this.markCompleted();
 
         if (this.props.onDone) {
-            this.props.onDone();
+            this.props.onDone(this.value);
         }
 
     }
@@ -115,14 +140,14 @@ export interface IProps {
 
     readonly title: string;
 
-    readonly description?: string;
+    readonly description?: React.ReactElement;
 
     /**
      * Don't send the event on form submission.  Just for testing.
      */
     readonly noEvent?: boolean;
 
-    readonly onDone?: () => void;
+    readonly onDone?: (text: string) => void;
 
 }
 

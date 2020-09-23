@@ -1,19 +1,27 @@
-import {ISODateTimeString, ISODateTimeStrings} from './ISODateTimeStrings';
+import {ISODateTimeString, ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
 import {Comment} from './Comment';
-import {Hashcodes} from '../Hashcodes';
-import {TextType} from './TextType';
-import {Texts} from './Texts';
-import {Ref} from './Refs';
+import {Hashcodes} from 'polar-shared/src/util/Hashcodes';
+import {TextType} from 'polar-shared/src/metadata/TextType';
+import {Texts} from 'polar-shared/src/metadata/Texts';
+import {Ref} from 'polar-shared/src/metadata/Refs';
 
 export class Comments {
 
     public static SEQUENCE: number = 0;
 
+    public static createID() {
+
+        const seq = this.SEQUENCE++;
+        const now = Date.now();
+        return Hashcodes.createID({seq, now}, 20);
+
+    }
+
     public static createTextComment(text: string, ref: Ref) {
 
         const content = Texts.create(text, TextType.TEXT);
 
-        const id = Hashcodes.createID(this.SEQUENCE++);
+        const id = this.createID();
         const created = ISODateTimeStrings.create();
         const lastUpdated = created;
 
@@ -28,7 +36,7 @@ export class Comments {
 
         const content = Texts.create(text, TextType.HTML);
 
-        const id = Hashcodes.createID(this.SEQUENCE++);
+        const id = this.createID();
 
         if (! created) {
             created = ISODateTimeStrings.create();

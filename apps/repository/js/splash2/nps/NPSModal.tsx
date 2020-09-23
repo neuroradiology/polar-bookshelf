@@ -1,11 +1,12 @@
 /* eslint react/no-multi-comp: 0, react/prop-types: 0 */
 import React from 'react';
-import {Feedback} from '../../../../../web/js/ui/feedback/Feedback';
-import {Rating} from '../../../../../web/js/ui/feedback/Feedback';
-import {Toaster} from '../../../../../web/js/ui/toaster/Toaster';
-import {UserFeedbacks} from '../../../../../web/js/customers/UserFeedback';
-import {MachineIDs} from '../../../../../web/js/util/MachineIDs';
-import {ISODateTimeStrings} from '../../../../../web/js/metadata/ISODateTimeStrings';
+import {Feedback, Rating} from '../../../../../web/js/ui/feedback/Feedback';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {UserFeedbacks} from '../../../../../web/js/telemetry/UserFeedback';
+import {SplashKeys} from '../SplashKeys';
+import {LocalPrefs} from '../../../../../web/js/util/LocalPrefs';
+import {Version} from 'polar-shared/src/util/Version';
+import {MachineIDs} from "polar-shared/src/util/MachineIDs";
 
 export class NPSModal extends React.Component<IProps, IState> {
 
@@ -29,13 +30,19 @@ export class NPSModal extends React.Component<IProps, IState> {
 
     private onRated(rating: Rating) {
 
-        Toaster.success("Thanks for your feedback!");
+        LocalPrefs.set(SplashKeys.NET_PROMOTER_SCORE, rating);
+
+        // Toaster.success("Thanks for your feedback!");
+
+        const version = Version.get();
 
         const userFeedback = {
             machine: MachineIDs.get(),
             text: null,
             netPromoterScore: rating,
-            created: ISODateTimeStrings.create()
+            created: ISODateTimeStrings.create(),
+            version
+
         };
 
         UserFeedbacks.write(userFeedback)

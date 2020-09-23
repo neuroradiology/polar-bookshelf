@@ -16,11 +16,10 @@ terminate() {
 }
 
 # this is what we used to run...
-# find web/js -name '*Test.js' | xargs mocha-parallel-tests --timeout 20000 --max-parallel=1 --exit
 
 mkdir -p target/test-results/mocha/
 
-for file in `find web/js -name '*Test.js' | sort -f`; do
+for file in `find apps web/js -name '*Test.js' | sort -f`; do
 
     echo "=========="
     echo "${file}"
@@ -32,7 +31,7 @@ for file in `find web/js -name '*Test.js' | sort -f`; do
 
     mochaFile=target/test-results/mocha/${parentDir}/${fileName}
 
-    npx mocha --timeout 20000 --reporter mocha-junit-reporter --reporter-options mochaFile=${mochaFile} --exit ${file}
+    npx mocha --timeout 20000 --reporter mocha-junit-reporter --reporter spec --reporter-options mochaFile=${mochaFile} --exit ${file}
     exit_code=$?
 
     total=$(expr ${total} + 1)

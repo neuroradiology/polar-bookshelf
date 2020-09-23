@@ -1,5 +1,5 @@
+// @NotStale
 import {AnkiConnectFetch} from '../AnkiConnectFetch';
-import * as TypeMoq from "typemoq";
 
 /**
  *
@@ -45,14 +45,14 @@ export class UpdateNoteFieldsClient implements IUpdateNoteFieldsClient {
 
     }
 
-    /**
-     * Create a mock that returns the given result.
-     */
-    public static createMock() {
-        const client = TypeMoq.Mock.ofType<IUpdateNoteFieldsClient>();
-        client.setup(x => x.execute(TypeMoq.It.isAny())).returns(() => Promise.resolve());
-        return client.object;
-    }
+    // /**
+    //  * Create a mock that returns the given result.
+    //  */
+    // public static createMock() {
+    //     const client = TypeMoq.Mock.ofType<IUpdateNoteFieldsClient>();
+    //     client.setup(x => x.execute(TypeMoq.It.isAny())).returns(() => Promise.resolve());
+    //     return client.object;
+    // }
 
 }
 

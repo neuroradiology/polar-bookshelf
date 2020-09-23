@@ -1,14 +1,15 @@
-import {DocInfo, IDocInfo} from './DocInfo';
-import {ISODateTimeStrings} from './ISODateTimeStrings';
-import {Optional} from '../util/ts/Optional';
+import {DocInfo} from './DocInfo';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {UUIDs} from './UUIDs';
-import {PagemarkType} from './PagemarkType';
+import {PagemarkType} from 'polar-shared/src/metadata/PagemarkType';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
 
 export class DocInfos {
 
     public static create(fingerprint: string, nrPages: number, filename?: string) {
 
-        const tmp: DocInfo = Object.create(DocInfos.prototype);
+        const tmp: IDocInfo = Object.create(DocInfos.prototype);
 
         tmp.fingerprint = fingerprint;
         tmp.nrPages = nrPages;
@@ -33,7 +34,7 @@ export class DocInfos {
 
     }
 
-    public static upgrade(docInfo: DocInfo) {
+    public static upgrade(docInfo: IDocInfo) {
 
         if (! docInfo) {
             // return whatever we were given (either undefined or null)
@@ -52,4 +53,5 @@ export class DocInfos {
         return docInfo;
 
     }
+
 }

@@ -1,16 +1,15 @@
-/* global $ */
-
 import $ from '../../../../ui/JQuery';
-import 'bootstrap';
-import 'summernote/dist/summernote-bs4';
+import 'summernote/dist/summernote-lite';
+import 'summernote/dist/summernote-lite.css';
 
-import React, { Component } from 'react';
+import React, {Component} from 'react';
 import ReactDOM from 'react-dom';
 import {HTMLString, RichTextMutator} from './RichTextMutator';
+
 const randomUid = () => Math.floor(Math.random() * 100000);
 
 /**
- * React Summernote for Twitter Boostrap v4
+ * React Summernote for Twitter Bootstrap v4
  */
 export class ReactSummernote4 extends Component<IProps, any> implements RichTextMutator {
 
@@ -106,7 +105,7 @@ export class ReactSummernote4 extends Component<IProps, any> implements RichText
 
     }
 
-    public componentWillReceiveProps(nextProps: any) {
+    public componentWillReceiveProps(nextProps: IProps) {
 
         const { props } = this;
 
@@ -204,6 +203,7 @@ export class ReactSummernote4 extends Component<IProps, any> implements RichText
             }
 
             noteEditable.html(content);
+            this.focus();
         }
     }
 
@@ -234,6 +234,7 @@ export class ReactSummernote4 extends Component<IProps, any> implements RichText
 
     public insertImage(url: any, filenameOrCallback: any) {
         this.editor.summernote('insertImage', url, filenameOrCallback);
+        this.focus();
     }
 
     public insertNode(node: Node) {
@@ -242,6 +243,15 @@ export class ReactSummernote4 extends Component<IProps, any> implements RichText
 
     public insertText(text: Node) {
         this.editor.summernote('insertText', text);
+        this.focus();
+    }
+
+    public saveRange() {
+        this.editor.summernote('saveRange');
+    }
+
+    public restoreRange() {
+        this.editor.summernote('restoreRange');
     }
 
     get callbacks() {

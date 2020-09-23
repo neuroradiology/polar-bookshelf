@@ -1,16 +1,17 @@
 import * as React from 'react';
-import {Logger} from '../../../../logger/Logger';
-import {FlashcardType} from '../../../../metadata/FlashcardType';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
 import {FlashcardButtons} from './FlashcardButtons';
 import {FlashcardTypeSelector} from './FlashcardTypeSelector';
 import {RichTextArea} from '../../../RichTextArea';
-import {FlashcardInputFieldsType, FlashcardInputs, FrontAndBackFields} from './FlashcardInputs';
+import {
+    FlashcardInputFieldsType,
+    FlashcardInputs,
+    FrontAndBackFields
+} from './FlashcardInputs';
 import {FlashcardStyles} from './FlashcardStyles';
 import {Flashcard} from '../../../../metadata/Flashcard';
-import {ClozeFields} from './FlashcardInputs';
 
-const log = Logger.create();
-
+// TODO: to functional component.
 export class FlashcardInputForFrontAndBack extends React.Component<IProps, IState> {
 
     private readonly flashcardType: FlashcardType = FlashcardType.BASIC_FRONT_BACK;
@@ -38,7 +39,7 @@ export class FlashcardInputForFrontAndBack extends React.Component<IProps, IStat
 
         return (
 
-            <div id="annotation-flashcard-box" className="mt-1">
+            <div id="annotation-flashcard-box" className="m-1">
 
                 <RichTextArea label="front"
                               id={`front-${this.props.id}`}
@@ -57,9 +58,12 @@ export class FlashcardInputForFrontAndBack extends React.Component<IProps, IStat
 
                 {/*- quote annotation ... to copy the annotation text.*/}
 
-                <div style={FlashcardStyles.BottomBar}>
+                <div style={{
+                        display: 'flex',
+                        alignItems: 'center'
+                     }}>
 
-                    <div style={FlashcardStyles.BottomBarItem}>
+                    <div style={{flexGrow: 1}}>
 
                         <FlashcardTypeSelector
                             flashcardType={this.flashcardType}
@@ -67,8 +71,7 @@ export class FlashcardInputForFrontAndBack extends React.Component<IProps, IStat
 
                     </div>
 
-                    <div style={FlashcardStyles.BottomBarItemRight}
-                         className="text-right">
+                    <div>
 
                         <FlashcardButtons cancelButton={this.props.cancelButton}
                                           existingFlashcard={this.props.existingFlashcard}
@@ -87,7 +90,7 @@ export class FlashcardInputForFrontAndBack extends React.Component<IProps, IStat
     private toFields(): FrontAndBackFields {
 
         const front = FlashcardInputs.fieldToString('front', this.props.existingFlashcard);
-        const back = FlashcardInputs.fieldToString('back', this.props.existingFlashcard);
+        const back = FlashcardInputs.fieldToString('back', this.props.existingFlashcard, this.props.defaultValue);
 
         return {front, back};
 
@@ -131,7 +134,7 @@ export class FlashcardInputForFrontAndBack extends React.Component<IProps, IStat
 
 }
 
-export interface IProps {
+interface IProps {
 
     readonly id: string;
 
@@ -145,9 +148,10 @@ export interface IProps {
 
     readonly existingFlashcard?: Flashcard;
 
+    readonly defaultValue?: string;
 }
 
-export interface IState {
+interface IState {
     readonly iter: number;
 }
 

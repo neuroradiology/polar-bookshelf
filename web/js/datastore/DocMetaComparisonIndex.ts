@@ -1,9 +1,11 @@
 import {DocMeta} from '../metadata/DocMeta';
-import {DocInfo, IDocInfo} from '../metadata/DocInfo';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {DocUUID} from './CloudAwareDatastore';
-import {isPresent} from '../Preconditions';
+import {isPresent} from 'polar-shared/src/Preconditions';
 import {DocMetaMutation} from './Datastore';
 import {UUIDs} from '../metadata/UUIDs';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+
 
 /**
  * The DocComparisonIndex allows us to detect which documents are local already
@@ -26,7 +28,7 @@ export class DocMetaComparisonIndex {
         delete this.backing[fingerprint];
     }
 
-    public updateUsingDocMeta(docMeta: DocMeta) {
+    public updateUsingDocMeta(docMeta: IDocMeta) {
 
         this.backing[docMeta.docInfo.fingerprint] = {
             fingerprint: docMeta.docInfo.fingerprint,

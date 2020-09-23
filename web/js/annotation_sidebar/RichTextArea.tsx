@@ -1,11 +1,7 @@
 import * as React from 'react';
-import {Logger} from '../logger/Logger';
-import {DocAnnotation} from './DocAnnotation';
 import {RichTextEditor4} from '../apps/card_creator/elements/schemaform/RichTextEditor4';
-import Button from 'reactstrap/lib/Button';
 import {RichTextMutator} from '../apps/card_creator/elements/schemaform/RichTextMutator';
-
-const log = Logger.create();
+import {HTMLStr} from "polar-shared/src/util/Strings";
 
 export class RichTextArea extends React.Component<IProps, IState> {
 
@@ -46,6 +42,7 @@ export class RichTextArea extends React.Component<IProps, IState> {
 
                         <RichTextEditor4 id={`rich-text-area-${this.props.id}`}
                                          value={this.props.value || ''}
+                                         defaultValue={this.props.defaultValue}
                                          autofocus={autofocus}
                                          onKeyDown={this.props.onKeyDown}
                                          onRichTextMutator={this.props.onRichTextMutator}
@@ -63,17 +60,16 @@ export class RichTextArea extends React.Component<IProps, IState> {
 
 }
 
-export interface IProps {
+interface IProps {
     readonly id: string;
     readonly value?: string;
+    readonly defaultValue?: string;
     readonly label?: string;
     readonly autofocus?: boolean;
-    readonly onChange: (html: htmlstring) => void;
+    readonly onChange: (html: HTMLStr) => void;
     readonly onKeyDown?: (event: KeyboardEvent) => void;
     readonly onRichTextMutator?: (mutator: RichTextMutator) => void;
 }
 
-export interface IState {
+interface IState {
 }
-
-export type htmlstring = string;

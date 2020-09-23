@@ -1,8 +1,8 @@
 import {Rule} from './Rule';
-import {ISODateTimeString} from '../../../../../web/js/metadata/ISODateTimeStrings';
-import {ISODateTimeStrings} from '../../../../../web/js/metadata/ISODateTimeStrings';
-import {isPresent} from '../../../../../web/js/Preconditions';
-import {Reducers} from '../../../../../web/js/util/Reducers';
+import {ISODateTimeString} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {Reducers} from 'polar-shared/src/util/Reducers';
 
 
 export type EventHandler = () => void;
@@ -98,6 +98,10 @@ export class Engine<F, H extends EventHandlers> {
 
     }
 
+    public getFacts(): F {
+        return this.facts;
+    }
+
 }
 
 export class RuleMap<F, H extends EventHandlers> {
@@ -179,7 +183,7 @@ export class EventMaps {
                 lastExecuted
             };
 
-            result[handlerName] = event;
+            (<any> result)[handlerName] = event;
 
         }
 
@@ -193,7 +197,7 @@ export class EventMaps {
 
         for (const eventName of Object.keys(eventMap)) {
             const event = eventMap[eventName];
-            result[eventName] = event.lastExecuted;
+            (<any> result)[eventName] = event.lastExecuted;
         }
 
         return result;
@@ -221,7 +225,9 @@ export class EventMaps {
     public static latestExecution<E extends EventHandlers>(eventMap: EventMap<E>): ISODateTimeString | undefined {
 
         const times: Array<string | undefined> = [...this.toLastExecutedTimes(eventMap)];
-        return  times.reduce(Reducers.LAST, undefined);
+        const result = times.reduce(Reducers.LAST, undefined);
+
+        return result;
 
     }
 

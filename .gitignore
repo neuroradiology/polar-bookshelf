@@ -5,3 +5,7 @@ web/dist/
 *-bundle.js.map
 dist/
 bower_components/
+*.DS_Store
+.webpack-cache-loader
+*.js.map
+tsconfig.tsbuildinfo

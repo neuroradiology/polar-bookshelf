@@ -1,14 +1,13 @@
 import {IEventDispatcher, SimpleReactor} from '../reactor/SimpleReactor';
 import {RemotePersistenceLayerFactory} from './factories/RemotePersistenceLayerFactory';
 import {CloudPersistenceLayerFactory} from "./factories/CloudPersistenceLayerFactory";
-import {IProvider} from "../util/Providers";
+import {IProvider} from "polar-shared/src/util/Providers";
 import {ListenablePersistenceLayer} from './ListenablePersistenceLayer';
-import {Logger} from "../logger/Logger";
-import {RendererAnalytics} from '../ga/RendererAnalytics';
+import {Logger} from "polar-shared/src/logger/Logger";
 import {WebPersistenceLayerFactory} from './factories/WebPersistenceLayerFactory';
-import {AppRuntime} from '../AppRuntime';
 import {DatastoreInitOpts} from './Datastore';
-import {Latch} from '../util/Latch';
+import {Latch} from "polar-shared/src/util/Latch";
+import { AppRuntime } from 'polar-shared/src/util/AppRuntime';
 
 const log = Logger.create();
 
@@ -26,6 +25,7 @@ export class PersistenceLayerManager implements IProvider<ListenablePersistenceL
     private current?: PersistenceLayerType;
 
     private initialized = new Latch<boolean>();
+    public state: PersistenceLayerState = 'stopped';
 
     constructor(private readonly opts?: DatastoreInitOpts) {
 
@@ -34,6 +34,8 @@ export class PersistenceLayerManager implements IProvider<ListenablePersistenceL
     public async start(): Promise<void> {
 
         let type = PersistenceLayerTypes.get();
+
+        console.log("Using persistence layer type: " + type);
 
         if (this.requiresReset()) {
 
@@ -84,16 +86,6 @@ export class PersistenceLayerManager implements IProvider<ListenablePersistenceL
      */
     public async change(type: PersistenceLayerType) {
 
-        if (AppRuntime.isBrowser() && this.persistenceLayer) {
-            // TODO: this is a workaround for the browser.  We should ideally
-            // support some type of class of datastores and (local and cloud)
-            // and their actual implementation (remote, firebase, cloud-aware).
-            // Then toggle on the actual implementation and only change it when
-            // the impl changes.
-            log.warn("Only 'web' persistence layers supported in browsers");
-            return false;
-        }
-
         if (this.current === type) {
             return false;
         }
@@ -135,7 +127,7 @@ export class PersistenceLayerManager implements IProvider<ListenablePersistenceL
 
         log.info("Initialized persistence layer: " + type);
 
-        RendererAnalytics.event({category: 'persistence-layer', action: 'changed-to-' + type});
+        // Analytics.event({category: 'persistence-layer', action: 'changed-to-' + type});
 
         return true;
 
@@ -191,7 +183,12 @@ export class PersistenceLayerManager implements IProvider<ListenablePersistenceL
         return this.persistenceLayerManagerEventDispatcher.addEventListener(listener);
     }
 
+    public removeEventListener(listener: PersistenceLayerManagerEventListener) {
+        return this.persistenceLayerManagerEventDispatcher.removeEventListener(listener);
+    }
+
     private dispatchEvent(event: PersistenceLayerManagerEvent): void {
+        this.state = event.state;
         this.persistenceLayerManagerEventDispatcher.dispatchEvent(event);
     }
 
@@ -264,24 +261,27 @@ export class PersistenceLayerTypes {
 
     public static get(): PersistenceLayerType {
 
-        if (AppRuntime.isBrowser()) {
+        return 'web';
 
-            // we are ALWAYS using firebase when in the browser and there is no
-            // other option.
-            return 'web';
-        }
-
-        const currentType = window.localStorage.getItem(this.KEY);
-
-        if (! currentType) {
-            return 'local';
-        }
-
-        if (currentType === 'local' || currentType === 'cloud') {
-            return currentType;
-        }
-
-        throw new Error("Unknown type: " + currentType);
+        //
+        // if (AppRuntime.isBrowser()) {
+        //
+        //     // we are ALWAYS using firebase when in the browser and there is no
+        //     // other option.
+        //     return 'web';
+        // }
+        //
+        // const currentType = window.localStorage.getItem(this.KEY);
+        //
+        // if (! currentType) {
+        //     return 'local';
+        // }
+        //
+        // if (currentType === 'local' || currentType === 'cloud') {
+        //     return currentType;
+        // }
+        //
+        // throw new Error("Unknown type: " + currentType);
 
     }
 
@@ -291,3 +291,7 @@ export class PersistenceLayerTypes {
 
 }
 
+export interface PersistenceLayerController {
+    reset(): void;
+    currentType(): PersistenceLayerType | undefined;
+}

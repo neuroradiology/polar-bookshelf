@@ -1,63 +1,33 @@
 import {app, BrowserWindow, dialog} from 'electron';
-import {ResourcePaths} from '../../electron/webresource/ResourcePaths';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {Services} from '../../util/services/Services';
-import {Webserver} from '../../backend/webserver/Webserver';
-import {BROWSER_WINDOW_OPTIONS, MainAppBrowserWindowFactory} from './MainAppBrowserWindowFactory';
+import {
+    BROWSER_WINDOW_OPTIONS,
+    MainAppBrowserWindowFactory
+} from './MainAppBrowserWindowFactory';
 import {AppLauncher} from './AppLauncher';
-import {Hashcodes} from '../../Hashcodes';
+import {Hashcodes} from 'polar-shared/src/util/Hashcodes';
 import {SingletonBrowserWindow} from '../../electron/framework/SingletonBrowserWindow';
 import process from 'process';
-import {Capture} from '../../capture/Capture';
 import {Directories} from '../../datastore/Directories';
 import {FileImportClient} from '../repository/FileImportClient';
-import {CaptureOpts} from '../../capture/CaptureOpts';
-import {Platform, Platforms} from '../../util/Platforms';
-import MenuItem = Electron.MenuItem;
 import {MainAppExceptionHandlers} from './MainAppExceptionHandlers';
-import {FileLoader} from './file_loaders/FileLoader';
 import {FileImportRequests} from '../repository/FileImportRequests';
+import {Webserver} from "polar-shared-webserver/src/webserver/Webserver";
+import {PathStr, URLStr} from "polar-shared/src/util/Strings";
+import MenuItem = Electron.MenuItem;
 
 const log = Logger.create();
 
 export class MainAppController {
 
-    private readonly fileLoader: FileLoader;
-
     private readonly webserver: Webserver;
 
     private readonly directories: Directories;
 
-    constructor(fileLoader: FileLoader,
-                webserver: Webserver) {
-        this.fileLoader = fileLoader;
+    constructor(webserver: Webserver) {
         this.webserver = webserver;
         this.directories = new Directories();
-    }
-
-    public async cmdCaptureWebPage() {
-
-        const browserWindowOptions = Object.assign({}, BROWSER_WINDOW_OPTIONS);
-
-        browserWindowOptions.width = browserWindowOptions.width! * .9;
-        browserWindowOptions.height = browserWindowOptions.height! * .9;
-        browserWindowOptions.center = true;
-
-        const url = ResourcePaths.resourceURLFromRelativeURL('./apps/capture/start-capture/index.html');
-
-        await MainAppBrowserWindowFactory.createWindow(browserWindowOptions, url);
-
-    }
-
-    public async cmdCaptureWebPageWithBrowser(captureOpts: Partial<CaptureOpts> = {}) {
-
-        const captureResult = await Capture.trigger(captureOpts);
-        await this.handleLoadDoc(captureResult.path);
-
-    }
-
-    public async cmdNewWindow() {
-        await MainAppBrowserWindowFactory.createWindow();
     }
 
     public async cmdImport() {
@@ -67,7 +37,8 @@ export class MainAppController {
         // send the messages to the renderer context now so that we can bulk
         // import them into the repo.
         if (files) {
-            FileImportClient.send(FileImportRequests.fromPaths(files));
+            const fileImportRequests = FileImportRequests.fromPaths(files);
+            FileImportClient.send(fileImportRequests);
         }
 
     }
@@ -166,69 +137,38 @@ export class MainAppController {
     /**
      * The user asked to open a file from the command line or via OS event.
      */
-    public async handleLoadDoc(path: string,
+    public async handleLoadDoc(url: URLStr,
                                newWindow: boolean = true): Promise<BrowserWindow> {
 
         const extraTags = {'type': 'viewer'};
 
-        const browserWindowTag = {name: 'viewer', value: Hashcodes.createID(path)};
+        const browserWindowTag = {name: 'viewer', value: Hashcodes.createID(url)};
 
         return await SingletonBrowserWindow.getInstance(browserWindowTag, async () => {
 
-            let window;
+            const computeWindow = async () => {
 
-            if (newWindow) {
-                window = await MainAppBrowserWindowFactory.createWindow(BROWSER_WINDOW_OPTIONS, 'about:blank');
-            } else {
-                window = BrowserWindow.getFocusedWindow()!;
-            }
+                const createWindow = async () => {
+                    return await MainAppBrowserWindowFactory.createWindow(BROWSER_WINDOW_OPTIONS, url);
+                };
 
-            return await this.loadDoc(path, window);
-
-        }, extraTags);
-
-    }
-
-    /**
-     * Load the given PDF file in the given target window.
-     */
-    public async loadDoc(path: string, targetWindow: BrowserWindow): Promise<BrowserWindow> {
-
-        if (!targetWindow) {
-            throw new Error("No target window given");
-        }
-
-        const loadedFile = await this.fileLoader.registerForLoad(path);
-
-        log.info("Loading webapp at: " + loadedFile.webResource);
-
-        loadedFile.webResource.load(targetWindow);
-
-        targetWindow.webContents.once('did-finish-load', () => {
-
-            if (loadedFile.title) {
-                // TODO: this should be driven from the DocMeta and the DocMeta
-                // should be initialized from the descriptor.
-                targetWindow.setTitle(loadedFile.title);
-            }
-
-            if (loadedFile.docDimensions) {
-
-                const [width, height] = targetWindow.getSize();
-
-                // compute the ideal width plus a small buffer for the sides.
-                const idealWidth = loadedFile.docDimensions.width + 100;
-
-                if (width < idealWidth) {
-                    log.info("Adjusting window width");
-                    targetWindow.setSize(idealWidth, height);
+                if (newWindow) {
+                    return createWindow();
                 }
 
-            }
+                const focusedWindow = BrowserWindow.getFocusedWindow();
 
-        });
+                if (focusedWindow) {
+                    return focusedWindow;
+                } else {
+                    return await createWindow();
+                }
 
-        return targetWindow;
+            };
+
+            return await computeWindow();
+
+        }, extraTags);
 
     }
 
@@ -260,27 +200,25 @@ export class MainAppController {
     /**
      * Open a dialog box for a PDF file.
      */
-    private async promptImportDocs(): Promise<string[] | undefined> {
+    private async promptImportDocs(): Promise<ReadonlyArray<PathStr> | undefined> {
 
         const downloadsDir = app.getPath('downloads');
 
-        return new Promise<string[] | undefined>((resolve) => {
-
-            dialog.showOpenDialog({
-                  title: "Import Document",
-                  defaultPath: downloadsDir,
-                  filters: [
-                      { name: 'Docs', extensions: ['pdf', "phz", "PDF"] }
-                  ],
-                  properties: ['openFile', 'multiSelections']
-                  // properties: ['openFile']
-              }, (paths) => {
-
-                resolve(paths);
-
-            });
-
+        const openedDialog = await dialog.showOpenDialog({
+            title: "Import Document",
+            defaultPath: downloadsDir,
+            filters: [
+                { name: 'Docs', extensions: ['pdf', "PDF", 'epub', 'EPUB'] }
+            ],
+            properties: ['openFile', 'multiSelections']
+            // properties: ['openFile']
         });
+
+        if (openedDialog.canceled) {
+            return undefined;
+        }
+
+        return openedDialog.filePaths;
 
     }
 

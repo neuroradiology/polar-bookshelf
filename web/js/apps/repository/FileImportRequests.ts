@@ -1,6 +1,6 @@
-import {FilePaths} from '../../util/FilePaths';
 import {FileImportRequest} from './FileImportRequest';
 import {AddFileRequests} from './AddFileRequests';
+import {PathStr} from "polar-shared/src/util/Strings";
 
 export class FileImportRequests {
 
@@ -14,7 +14,7 @@ export class FileImportRequests {
 
     }
 
-    public static fromPaths(paths: string[]): FileImportRequest {
+    public static fromPaths(paths: ReadonlyArray<PathStr>): FileImportRequest {
 
         const files = paths.map(path => AddFileRequests.fromPath(path));
 

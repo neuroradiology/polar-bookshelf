@@ -1,8 +1,6 @@
-import {Preconditions} from '../../../Preconditions';
-import {Logger} from '../../../logger/Logger';
-import {NodeTypes} from './NodeTypes';
-
-const log = Logger.create();
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import {arrayStream} from "polar-shared/src/util/ArrayStreams";
+import {Strings} from "polar-shared/src/util/Strings";
 
 export class Ranges {
 
@@ -11,13 +9,12 @@ export class Ranges {
      * our own unique copies that can't be reset.
      *
      */
-    public static cloneRanges(ranges: Range[]) {
+    public static cloneRanges(ranges: ReadonlyArray<Range>): ReadonlyArray<Range> {
         return ranges.map(range => range.cloneRange());
     }
 
     /**
      * Split a text node and get the new / starting node.
-     *
      */
     public static splitTextNode(container: Node,
                                 offset: number,
@@ -78,15 +75,38 @@ export class Ranges {
 
     }
 
+    public static toText(range: Range): string {
+
+        const docFragment = range.cloneContents();
+
+        function childNodeToText(childNode: ChildNode): string | null {
+
+            if (childNode.nodeType === Node.TEXT_NODE) {
+                return childNode.textContent;
+            } else {
+                return (<HTMLElement> childNode).innerText;
+            }
+
+        }
+
+        return arrayStream(Array.from(docFragment.childNodes))
+                .map(childNodeToText)
+                .filter(current => current !== null)
+                .map(current => current!)
+                .collect()
+                .join("");
+
+    }
+
     /**
      * Get the text nodes for range. Optionally splitting the text if necessary
      *
      * @param range {Range}
      * @return {Array<Node>}
      */
-    public static getTextNodes(range: Range) {
+    public static getTextNodes(range: Range): ReadonlyArray<Node> {
 
-        Preconditions.assertNotNull(range, "range");
+        Preconditions.assertPresent(range, "range");
 
         // We start walking the tree until we find the start node, then we
         // enable set inSelection = true... then when we exit the selection by
@@ -96,8 +116,8 @@ export class Ranges {
         const startNode = Ranges.splitTextNode(range.startContainer, range.startOffset, true);
         const endNode = Ranges.splitTextNode(range.endContainer, range.endOffset, false);
 
-        Preconditions.assertNotNull(startNode, "startNode");
-        Preconditions.assertNotNull(endNode, "endNode");
+        Preconditions.assertPresent(startNode, "startNode");
+        Preconditions.assertPresent(endNode, "endNode");
 
         const doc = range.startContainer.ownerDocument!;
 
@@ -141,18 +161,32 @@ export class Ranges {
     }
 
     /**
-     * Similar to getTextNodes but we return true if the nodes have text in them.
-     *
-     *
-     * @param range
+     * Return true if the range has text.
      */
-    public static hasText(range: Range) {
+    public static hasText(range: Range): boolean {
+
+        const doc = range.startContainer.ownerDocument;
+        const contents = range.cloneContents();
+        const div = doc!.createElement('div');
+        div.appendChild(contents);
+
+        const text = div.innerText;
+
+        return text.trim() !== '';
+
+    }
+
+
+    /**
+     * Similar to getTextNodes but we return true if the nodes have text in them.
+     */
+    public static hasTextWithNodeSplit(range: Range): boolean {
 
         // TODO massive amount of duplication with getTextNodes and might be
         // valuable to rework this to a visitor pattern which accepts a function
         // which returns true if we should keep moving forward.
 
-        Preconditions.assertNotNull(range, "range");
+        Preconditions.assertPresent(range, "range");
 
         // We start walking the tree until we find the start node, then we
         // enable set inSelection = true... then when we exit the selection by
@@ -162,8 +196,9 @@ export class Ranges {
         const startNode = Ranges.splitTextNode(range.startContainer, range.startOffset, true);
         const endNode = Ranges.splitTextNode(range.endContainer, range.endOffset, false);
 
-        Preconditions.assertNotNull(startNode, "startNode");
-        Preconditions.assertNotNull(endNode, "endNode");
+        if (! startNode || ! endNode) {
+            return false;
+        }
 
         const doc = range.startContainer.ownerDocument!;
 

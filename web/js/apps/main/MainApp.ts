@@ -1,19 +1,12 @@
+// @NotStale
 import {app, BrowserWindow} from 'electron';
-import {WebserverConfig} from '../../backend/webserver/WebserverConfig';
-import {FileRegistry} from '../../backend/webserver/FileRegistry';
-import {ProxyServerConfig} from '../../backend/proxyserver/ProxyServerConfig';
-import {CacheRegistry} from '../../backend/proxyserver/CacheRegistry';
 import {Directories} from '../../datastore/Directories';
-import {CaptureController} from '../../capture/controller/CaptureController';
-import {DialogWindowService} from '../../ui/dialog_window/DialogWindowService';
-import {Webserver} from '../../backend/webserver/Webserver';
 import {MainAppController} from './MainAppController';
 import {MainAppMenu} from './MainAppMenu';
 import {Cmdline} from '../../electron/Cmdline';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {Datastore} from '../../datastore/Datastore';
-import {ScreenshotService} from '../../screenshots/ScreenshotService';
-import {DocLoaderService} from './doc_loaders/electron/ipc/DocLoaderService';
+import {ScreenshotService} from '../../screenshots/electron/ScreenshotService';
 import {AppLauncher} from './AppLauncher';
 import {DocInfoBroadcasterService} from '../../datastore/advertiser/DocInfoBroadcasterService';
 import process from "process";
@@ -22,9 +15,12 @@ import {MainAPI} from './MainAPI';
 import {MainAppExceptionHandlers} from './MainAppExceptionHandlers';
 import {FileImportClient} from '../repository/FileImportClient';
 import {RendererAnalyticsService} from '../../ga/RendererAnalyticsService';
-import {AnalyticsFileLoader} from './file_loaders/AnalyticsFileLoader';
-import {DefaultFileLoader} from './file_loaders/DefaultFileLoader';
 import {FileImportRequests} from '../repository/FileImportRequests';
+import {DefaultRewrites} from "polar-backend-shared/src/webserver/DefaultRewrites";
+import {WebserverConfigs} from "polar-shared-webserver/src/webserver/WebserverConfig";
+import {FileRegistry} from "polar-shared-webserver/src/webserver/FileRegistry";
+import {Webserver} from "polar-shared-webserver/src/webserver/Webserver";
+import {ExternalNavigationBlockDelegates} from "../../electron/navigation/ExternalNavigationBlockDelegates";
 
 declare var global: any;
 
@@ -32,10 +28,9 @@ const log = Logger.create();
 
 const WEBSERVER_PORT = 8500;
 
-// TODO: refactor the proxy server isn't used any longer but it is referenced
-// in a number of places including the cache config and registry.
-const PROXYSERVER_PORT = 8600;
-
+/**
+ * @Deprecated now using this code in polar-desktop-app
+ */
 export class MainApp {
 
     private readonly datastore: Datastore;
@@ -48,30 +43,28 @@ export class MainApp {
 
         MainAppExceptionHandlers.register();
 
+        ExternalNavigationBlockDelegates.init();
+
         // share the disk datastore with the remote.
         // TODO: move this so that we don't expose 'global' here.
         global.datastore = this.datastore;
 
-        const webserverConfig = WebserverConfig.create({
+        const webserverConfig = WebserverConfigs.create({
             dir: AppPath.get(),
             port: WEBSERVER_PORT,
             host: 'localhost',
             useSSL: false,
+            rewrites: DefaultRewrites.create()
         });
 
         const fileRegistry = new FileRegistry(webserverConfig);
 
-        const proxyServerConfig = new ProxyServerConfig(PROXYSERVER_PORT);
-        const cacheRegistry = new CacheRegistry(proxyServerConfig);
-
         const directories = new Directories();
 
-        const captureController = new CaptureController(cacheRegistry, fileRegistry);
+        // const dialogWindowService = new DialogWindowService();
 
-        const dialogWindowService = new DialogWindowService();
-
-        const defaultFileLoader = new DefaultFileLoader(fileRegistry, cacheRegistry);
-
+        // TODO: I don't think we need this any more due to screenshots being
+        // provided via canvas and just images.
         const screenshotService = new ScreenshotService();
         screenshotService.start();
 
@@ -114,25 +107,17 @@ export class MainApp {
         // await cacheInterceptorService.start()
         //     .catch(err => log.error(err));
 
-        await captureController.start();
-
-        await dialogWindowService.start();
-
-        const fileLoader = new AnalyticsFileLoader(defaultFileLoader);
-
         await new DocInfoBroadcasterService().start();
 
         log.info("Running with process.args: ", JSON.stringify(process.argv));
 
-        const mainAppController = new MainAppController(fileLoader, webserver);
+        const mainAppController = new MainAppController(webserver);
 
         global.mainAppController = mainAppController;
 
+        // TODO: not needed anymore I thik...
         const mainAppAPI = new MainAPI(mainAppController, webserver);
         mainAppAPI.start();
-
-        const mainAppService = new DocLoaderService(mainAppController);
-        mainAppService.start();
 
         // TODO: handle the command line here.. IE if someone opens up a file
         // via argument.

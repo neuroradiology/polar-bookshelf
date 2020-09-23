@@ -1,11 +1,15 @@
-import {Hashcodes} from '../Hashcodes';
+import {Hashcodes} from 'polar-shared/src/util/Hashcodes';
 import {TextHighlight} from './TextHighlight';
-import {Text} from './Text';
-import {Arrays} from '../util/Arrays';
-import {TextRect} from './TextRect';
-import {IRect} from '../util/rects/IRect';
-import {ISODateTimeStrings} from './ISODateTimeStrings';
-import {HighlightColor} from './BaseHighlight';
+import {IText} from 'polar-shared/src/metadata/Text';
+import {IRect} from 'polar-shared/src/util/rects/IRect';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {ITextHighlight} from "polar-shared/src/metadata/ITextHighlight";
+import {
+    AnnotationOrder,
+    HighlightColor
+} from "polar-shared/src/metadata/IBaseHighlight";
+import {ITextRect} from "polar-shared/src/metadata/ITextRect";
+import {Arrays} from "polar-shared/src/util/Arrays";
 
 export class TextHighlightRecords {
 
@@ -18,18 +22,21 @@ export class TextHighlightRecords {
      * @return an object with an "id" for a unique hash and a "value" of the
      * TextHighlight to use.
      */
-    public static create(rects: IRect[],
-                         textSelections: TextRect[],
-                         text: Text,
-                         color: HighlightColor = 'yellow'): TextHighlightRecord {
+    public static create(rects: ReadonlyArray<IRect>,
+                         textSelections: ReadonlyArray<ITextRect>,
+                         text: IText,
+                         color: HighlightColor = 'yellow',
+                         // tslint:disable-next-line:no-unnecessary-initializer
+                         order: AnnotationOrder | undefined = undefined): TextHighlightRecord {
 
-        const id = Hashcodes.createID(rects);
+        const id = Hashcodes.createID(rects.length > 0 ? rects : text);
 
         const created = ISODateTimeStrings.create();
         const lastUpdated = created;
 
         const textHighlight = new TextHighlight({
             id,
+            guid: id,
             created,
             lastUpdated,
             rects: Arrays.toDict(rects),
@@ -39,8 +46,8 @@ export class TextHighlightRecords {
             notes: {},
             questions: {},
             flashcards: {},
-            guid: id,
-            color
+            color,
+            order
         });
 
         return {id, value: textHighlight};
@@ -51,5 +58,5 @@ export class TextHighlightRecords {
 
 export interface TextHighlightRecord {
     readonly id: string;
-    readonly value: TextHighlight;
+    readonly value: ITextHighlight;
 }

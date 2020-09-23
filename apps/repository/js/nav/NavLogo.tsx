@@ -1,14 +1,11 @@
 import * as React from 'react';
 import {IStyleMap} from '../../../../web/js/react/IStyleMap';
+import {PolarSVGIcon} from "../../../../web/js/ui/svg_icons/PolarSVGIcon";
+import {Devices} from "polar-shared/src/util/Devices";
+import {MUIRouterLink} from "../../../../web/js/mui/MUIRouterLink";
 
 const Styles: IStyleMap = {
-    parent: {
-        display: 'inline-block'
-    },
-
     child: {
-        display: 'inline-block',
-        verticalAlign: 'middle',
         userSelect: 'none'
     },
 
@@ -22,38 +19,58 @@ const Styles: IStyleMap = {
 
 };
 
-/**
- */
-export class NavLogo extends React.PureComponent<IProps, IState> {
+export const NavLogo = React.memo(() => {
 
-    constructor(props: IProps, context: any) {
-        super(props, context);
-    }
+    const createLink = () => {
 
-    public render() {
+        if (Devices.get() === 'desktop') {
+            return '/';
+        } else {
+            return '/annotations';
+        }
 
+    };
+
+    const link = createLink();
+
+    const NavLink = (props: any) => {
         return (
-            <div style={Styles.parent}>
-                <div style={Styles.child}>
-                    <a href="#">
-                        <img src="/apps/repository/img/icon.svg" height="25"/>
-                    </a>
-                </div>
-
-                <div style={Styles.child}>
-                    <div className="d-none-mobile" style={Styles.textLogo}>POLAR</div>
-                </div>
-            </div>
+            <MUIRouterLink to={{pathname: link, hash: '#'}}>
+                {props.children}
+            </MUIRouterLink>
         );
+    };
 
-    }
+    return (
+        <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'nowrap',
+             }}>
+            <div style={Styles.child}>
+                <NavLink>
 
-}
+                    <div style={{
+                             height: '50px',
+                             width: '50px',
+                             display: 'flex',
+                             alignItems: 'center',
+                             flexWrap: 'nowrap',
+                         }}>
+                        <PolarSVGIcon width={50} height={50}/>
+                    </div>
 
-interface IProps {
+                </NavLink>
+            </div>
 
-}
+            <div style={Styles.child}>
+                <NavLink>
+                    <div style={Styles.textLogo}>POLAR</div>
+                </NavLink>
+            </div>
 
-interface IState {
+        </div>
+    );
 
-}
+});
+

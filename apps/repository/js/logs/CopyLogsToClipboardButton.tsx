@@ -1,15 +1,7 @@
 import * as React from 'react';
-import {Logger} from '../../../../web/js/logger/Logger';
 import {MemoryLogger} from '../../../../web/js/logger/MemoryLogger';
-import {Toaster} from '../../../../web/js/ui/toaster/Toaster';
 import {Clipboards} from '../../../../web/js/util/system/clipboard/Clipboards';
-import Button from 'reactstrap/lib/Button';
-
-const log = Logger.create();
-
-class Styles {
-
-}
+import Button from "@material-ui/core/Button";
 
 export default class CopyLogsToClipboardButton extends React.Component<IProps, IState> {
 
@@ -22,7 +14,8 @@ export default class CopyLogsToClipboardButton extends React.Component<IProps, I
     public render() {
 
         return (
-            <Button size="sm" onClick={() => this.onClick()}>
+            <Button variant="contained"
+                    onClick={() => this.onClick()}>
                 Copy to Clipboard
             </Button>
         );
@@ -36,7 +29,7 @@ export default class CopyLogsToClipboardButton extends React.Component<IProps, I
         const text = messages.map(current => {
 
             if (current.args && current.args.length > 0) {
-                const args = JSON.stringify(current.args);
+                const args = JSON.stringify(current.args, null, "  ");
                 return `${current.timestamp}: ${current.msg}: ${args}`;
             } else {
                 return `${current.timestamp}: ${current.msg}`;
@@ -46,7 +39,7 @@ export default class CopyLogsToClipboardButton extends React.Component<IProps, I
 
         Clipboards.getInstance().writeText(text);
 
-        Toaster.success("Wrote log output to clipboard.");
+        // Toaster.success("Wrote log output to clipboard.");
 
     }
 

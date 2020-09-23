@@ -1,12 +1,12 @@
 import {RecordHolder} from './FirebaseDatastore';
 import {Firestore} from '../firebase/Firestore';
-import {Hashcodes} from '../Hashcodes';
-import {ISODateTimeString, ISODateTimeStrings} from '../metadata/ISODateTimeStrings';
-import {Preconditions} from '../Preconditions';
-import * as firebase from '../firebase/lib/firebase';
-import {Optional} from '../util/ts/Optional';
-import {RendererAnalytics} from '../ga/RendererAnalytics';
-import {Visibility} from './Datastore';
+import {Hashcodes} from 'polar-shared/src/util/Hashcodes';
+import {ISODateTimeString, ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import * as firebase from 'firebase/app';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {Visibility} from "polar-shared/src/datastore/Visibility";
+import {Analytics} from "../analytics/Analytics";
 
 export class Invitations {
 
@@ -33,7 +33,9 @@ export class Invitations {
 
             }
 
-            RendererAnalytics.event({category: 'invitations', action: 'invited-' + emailAddresses.length});
+            // Analytics.event({category: 'invitations', action: 'invited-' + emailAddresses.length});
+            Analytics.event({category: 'invitations', action: 'invited'});
+
 
         } finally {
             // noop for now

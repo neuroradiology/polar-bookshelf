@@ -1,6 +1,6 @@
 import {BrowserWindow} from 'electron';
-import {Sets} from '../../util/Sets';
-import {Dictionaries} from '../../util/Dictionaries';
+import {SetArrays} from 'polar-shared/src/util/SetArrays';
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
 
 export class BrowserWindowMeta {
 
@@ -105,9 +105,9 @@ export class BrowserWindowRegistry {
         const liveWindowIDs
             = this.liveWindowsProvider.getLiveWindowIDs().map(current => current.toString())
 
-        const allWindowIDs = Sets.union(registryKeys, liveWindowIDs);
+        const allWindowIDs = SetArrays.union(registryKeys, liveWindowIDs);
 
-        const keysToRemove = Sets.difference(allWindowIDs, liveWindowIDs);
+        const keysToRemove = SetArrays.difference(allWindowIDs, liveWindowIDs);
 
         keysToRemove.forEach(current => delete this.registry[current]);
 

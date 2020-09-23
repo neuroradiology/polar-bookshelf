@@ -1,9 +1,8 @@
-import {Platforms} from '../../util/Platforms';
-import {AppRuntime} from '../../AppRuntime';
-import {shell} from 'electron';
+import {Platforms} from 'polar-shared/src/util/Platforms';
 
 export class Nav {
 
+    /// TODO: this should probably be deprecated
     public static createHashURL(hash: string) {
         const url = new URL(window.location.href);
         url.hash = hash;
@@ -12,18 +11,10 @@ export class Nav {
 
     public static openLinkWithNewTab(link: string) {
 
-        if (AppRuntime.isBrowser()) {
+        const win = window.open(link, '_blank');
 
-            const win = window.open(link, '_blank');
-
-            if (win) {
-                win.focus();
-            }
-
-        } else {
-            shell.openExternal(link)
-                .catch(err => console.error(err));
-
+        if (win) {
+            win.focus();
         }
 
     }
@@ -33,7 +24,7 @@ export class Nav {
      * by pre-creating a window and then changing the location later.
      *
      */
-    public static createLinkLoader(opts: LinkLoaderOpts = {focus: true}): LinkLoader {
+    public static createLinkLoader(opts: LinkLoaderOpts = {focus: true, newWindow: true}): LinkLoader {
 
         if (Platforms.type() === 'desktop') {
             return new DesktopLinkLoader(opts);
@@ -51,17 +42,31 @@ class DesktopLinkLoader implements LinkLoader {
 
     constructor(opts: LinkLoaderOpts) {
 
-        const win = window.open('', '_blank');
+        function createWindow() {
+            console.log("Creating new window");
+            return window.open('', '_blank');
+        }
+
+        const win = opts.newWindow ? createWindow() : window;
 
         if (win) {
 
             this.win = win;
 
-            if (opts.focus) {
-                win.focus();
-            }
+            if (opts.newWindow) {
 
-            win.document.write("Loading...");
+                if (opts.focus) {
+                    win.focus();
+                }
+
+                if (win && win.document) {
+                    // this is primarily for Electron as you can't access the
+                    // document from electron since it's basically emulating
+                    // this API.
+                    win.document.write(LOADING_HTML);
+                }
+
+            }
 
         } else {
             throw new Error("Unable to create window");
@@ -70,6 +75,7 @@ class DesktopLinkLoader implements LinkLoader {
     }
 
     public load(link: string): void {
+        console.log("Setting window location to: " + link);
         this.win.location.href = link;
     }
 
@@ -85,6 +91,7 @@ class MobileLinkLoader implements LinkLoader {
 
 export interface LinkLoaderOpts {
     readonly focus: boolean;
+    readonly newWindow: boolean;
 }
 
 export interface LinkLoader {
@@ -92,3 +99,24 @@ export interface LinkLoader {
     load(link: string): void;
 
 }
+
+/**
+ * Loading HTML that should look good in all browsers.  Might also want to add
+ * a Polar logo or something.
+ */
+const LOADING_HTML = `
+<html>
+<head>
+<style>
+    html {
+        background-color: rgb(66, 66, 66);
+        color: rgb(255, 255, 255);
+    }
+</style>
+</head>
+<body>
+Loading... 
+</body>
+</html>
+
+`

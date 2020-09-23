@@ -1,6 +1,7 @@
 {
     "compilerOptions": {
 
+        "incremental": true,
         "strict": true,
         "noImplicitAny": true,
         "strictNullChecks": true,
@@ -10,8 +11,7 @@
         "noImplicitReturns": true,
         "removeComments": true,
         "strictFunctionTypes": true,
-        "inlineSourceMap": true,
-        "inlineSources": true,
+        "sourceMap": true,
         "target": "ES2015",
         "module": "commonjs",
         "moduleResolution": "node",
@@ -34,25 +34,17 @@
         "paths": {
             "*": ["node_modules/*"]
         },
-        "lib": ["es2015", "dom", "es2017.object", "es2015.promise", "es2016.array.include"]
+        "lib": ["es2019", "dom"]
 
     },
     "include": [
-        "main.ts",
         "test/sandbox/**/*",
         "scripts/**/*",
         "web/**/*",
         "apps/**/*"
     ],
     "exclude": [
-
-    ],
-    "types": [
-        "mocha",
-        "electron",
-        "reflect-metadata"
-    ],
-    "typeRoots": [
-        "./node_modules/@types"
+        "node_modules/**",
+        "web/spectron.disabled/*"
     ]
 }

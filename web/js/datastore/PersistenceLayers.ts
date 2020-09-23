@@ -1,22 +1,20 @@
 import {PersistenceLayer} from "./PersistenceLayer";
-import {ASYNC_NULL_FUNCTION, NULL_FUNCTION} from "../util/Functions";
-import {Backend} from './Backend';
-import {AsyncFunction, AsyncWorkQueue} from '../util/AsyncWorkQueue';
+import {ASYNC_NULL_FUNCTION, NULL_FUNCTION} from "polar-shared/src/util/Functions";
+import {AsyncFunction, AsyncWorkQueue} from 'polar-shared/src/util/AsyncWorkQueue';
 import {DocMetaRef} from "./DocMetaRef";
-import {Datastore, DocMetaSnapshotEvent, DocMetaSnapshotEventListener, FileRef, SyncDoc, SyncDocMap, SyncDocs} from './Datastore';
-import {BackendFileRef} from './Datastore';
-import {Visibility} from './Datastore';
+import {Datastore, DocMetaSnapshotEvent, DocMetaSnapshotEventListener, SyncDoc, SyncDocMap, SyncDocs} from './Datastore';
 import {UUIDs} from '../metadata/UUIDs';
-import {ProgressListener, ProgressTracker} from '../util/ProgressTracker';
+import {ProgressListener, ProgressTracker} from 'polar-shared/src/util/ProgressTracker';
 import {DocMetas} from '../metadata/DocMetas';
 import {DefaultPersistenceLayer} from './DefaultPersistenceLayer';
 import {DocMeta} from '../metadata/DocMeta';
-import {isPresent} from "../Preconditions";
-import {Optional} from "../util/ts/Optional";
-import {DocFileMeta} from "./DocFileMeta";
-import {URLs} from "../util/URLs";
-import {Logger} from "../logger/Logger";
-import {Datastores} from './Datastores';
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {URLs} from "polar-shared/src/util/URLs";
+import {Logger} from "polar-shared/src/logger/Logger";
+import {BackendFileRefs} from './BackendFileRefs';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {BackendFileRef} from "polar-shared/src/datastore/BackendFileRef";
+import {Visibility} from "polar-shared/src/datastore/Visibility";
 
 const log = Logger.create();
 
@@ -29,12 +27,12 @@ export class PersistenceLayers {
      *
      */
     public static async changeVisibility(store: PersistenceLayer,
-                                         docMeta: DocMeta,
+                                         docMeta: IDocMeta,
                                          visibility: Visibility) {
 
         log.info("Changing document visibility changed to: ", visibility);
 
-        const backendFileRefs = Datastores.toBackendFileRefs(docMeta);
+        const backendFileRefs = BackendFileRefs.toBackendFileRefs(docMeta);
 
         const writeFileOpts = {visibility, updateMeta: true};
 
@@ -74,6 +72,17 @@ export class PersistenceLayers {
         return new DefaultPersistenceLayer(input);
     }
 
+    public static async toSyncOrigin(datastore: Datastore, ...docMetaRefs: DocMetaRef[]): Promise<SyncOrigin> {
+
+        const syncDocMap = await PersistenceLayers.toSyncDocMapFromDocs(datastore, docMetaRefs);
+
+        return {
+            datastore,
+            syncDocMap
+        };
+
+    }
+
     public static async toSyncDocMap(datastore: Datastore,
                                      progressStateListener: ProgressListener = NULL_FUNCTION) {
 
@@ -84,7 +93,7 @@ export class PersistenceLayers {
     }
 
     public static async toSyncDocMapFromDocs(datastore: Datastore,
-                                             docMetaRefs: DocMetaRef[],
+                                             docMetaRefs: ReadonlyArray<DocMetaRef>,
                                              progressStateListener: ProgressListener = NULL_FUNCTION) {
 
         const syncDocsMap: SyncDocMap = {};
@@ -92,14 +101,19 @@ export class PersistenceLayers {
         const work: AsyncFunction[] = [];
         const asyncWorkQueue = new AsyncWorkQueue(work);
 
-        const progressTracker = new ProgressTracker(docMetaRefs.length,
-                                                    `datastore:${datastore.id}#toSyncDocMapFromDocs`);
+        const init = {
+            total: docMetaRefs.length,
+            id: `datastore:${datastore.id}#toSyncDocMapFromDocs`
+        };
+
+        const progressTracker = new ProgressTracker(init);
 
         for (const docMetaRef of docMetaRefs) {
 
             work.push(async () => {
 
-                let docMeta: DocMeta | undefined = docMetaRef.docMeta;
+                let docMeta: IDocMeta | undefined
+                    = docMetaRef.docMetaProvider ? await docMetaRef.docMetaProvider() : undefined;
 
                 if (! docMeta) {
 
@@ -157,6 +171,9 @@ export class PersistenceLayers {
                                            cloudSyncOrigin: SyncOrigin,
                                            listener: DocMetaSnapshotEventListener = ASYNC_NULL_FUNCTION): Promise<void> {
 
+        // log.notice("local: " + localSyncOrigin.datastore.id);
+        // log.notice("cloud: " + cloudSyncOrigin.datastore.id);
+
         log.notice("Transferring from local -> cloud...");
         const localToCloud = await PersistenceLayers.transfer(localSyncOrigin, cloudSyncOrigin, listener, 'local-to-cloud');
         log.notice("Transferring from local -> cloud...done", localToCloud);
@@ -176,6 +193,9 @@ export class PersistenceLayers {
                                  listener: DocMetaSnapshotEventListener = ASYNC_NULL_FUNCTION,
                                  id: string = 'none'): Promise<TransferResult> {
 
+        // TODO: include warnings as part of the transfer so that they can be
+        // logged and so that we can tell the user.
+
         // TODO: no errors are actually raised on the copy operations that are
         // operating in the async queue.  These need to be bubbled up.  This
         // function could just take an error listener and call back that way
@@ -192,38 +212,40 @@ export class PersistenceLayers {
             }
         };
 
-        async function handleSyncFile(syncDoc: SyncDoc, fileRef: FileRef) {
+        async function handleSyncFile(syncDoc: SyncDoc, fileRef: BackendFileRef) {
 
             ++result.files.total;
 
-            // FIXME: use backendFileRef not just a simple FileRef so that we
-            // can handle binary attachments.
-            if (! await target.datastore.containsFile(Backend.STASH, fileRef)) {
-
-                let optionalFile: Optional<DocFileMeta>;
+            const containsFile = async (datastore: Datastore,
+                                        id: 'source' | 'target'): Promise<boolean> => {
 
                 try {
-                    optionalFile = await source.datastore.getFile(Backend.STASH, fileRef);
+                    return await datastore.containsFile(fileRef.backend, fileRef);
                 } catch (e) {
-                    log.error(`Could not get file ${fileRef.name} for doc with fingerprint: ${syncDoc.fingerprint}`, fileRef, e);
+                    log.error(`Could not get file ${fileRef.name} for doc with fingerprint: ${syncDoc.fingerprint} from ${id}`, fileRef, e);
                     throw e;
                 }
 
-                if (optionalFile.isPresent()) {
+            };
 
-                    // TODO: make this a dedicated function to transfer between
-                    // do datastores... or at least a dedicated function to read
-                    // it in as a buffer but this might be less of an issue now
-                    // that I know that both firebase and the disk datastore
-                    // can easily convert URLs to blobs and work with them.
+            const targetContainsFile = await containsFile(target.datastore, 'target');
 
-                    const file = optionalFile.get();
-                    const blob = await URLs.toBlob(file.url);
+            if (! targetContainsFile) {
 
-                    await target.datastore.writeFile(file.backend, fileRef, blob);
+                const sourceContainsFile =  await containsFile(source.datastore, 'source');
+
+                if (sourceContainsFile) {
+
+                    const sourceFile = source.datastore.getFile(fileRef.backend, fileRef);
+
+                    const blob = await URLs.toBlob(sourceFile.url);
+
+                    await target.datastore.writeFile(sourceFile.backend, fileRef, blob);
 
                     ++result.files.writes;
 
+                } else {
+                    log.warn(`Both the target and source files are missing in doc ${syncDoc.fingerprint} (${syncDoc.title}): `, fileRef);
                 }
 
             }
@@ -242,24 +264,16 @@ export class PersistenceLayers {
 
             ++result.docMeta.total;
 
-            for (const sourceSyncFile of sourceSyncDoc.files) {
+            /**
+             * Return true if we should write doc meta because it's stale.
+             */
+            function computeWriteDocMeta(): boolean {
 
-                // TODO: we're going to need some type of method to get all the
-                // files backing a DocMeta file when we start to use attachments
-                // like screenshots.
-
-                if (sourceSyncFile.ref.name) {
-                    // TODO: if we use the second queue it still locks up.
-                    // await docFileAsyncWorkQueue.enqueue(async () =>
-                    // handleStashFile(docFile));
-                    await handleSyncFile(sourceSyncDoc, sourceSyncFile.ref);
+                if (! targetSyncDoc) {
+                    // the target doc is missing so we absolutely have to write
+                    // it
+                    return true;
                 }
-
-            }
-
-            let doWriteDocMeta: boolean = ! targetSyncDoc;
-
-            if (targetSyncDoc) {
 
                 const cmp = UUIDs.compare(targetSyncDoc.uuid, sourceSyncDoc.uuid);
 
@@ -267,14 +281,32 @@ export class PersistenceLayers {
                 // have a conflict which we need to surface to the user but this
                 // is insanely rare.
 
-                doWriteDocMeta = cmp < 0;
+                return cmp < 0;
 
             }
 
-            if (doWriteDocMeta) {
+            const targetStale = computeWriteDocMeta();
+
+            if (targetStale) {
+
+                for (const sourceSyncFile of sourceSyncDoc.files) {
+
+                    if (sourceSyncFile.name) {
+                        // TODO: if we use the second queue it still locks up.
+                        // await docFileAsyncWorkQueue.enqueue(async () =>
+                        // handleStashFile(docFile));
+                        await handleSyncFile(sourceSyncDoc, sourceSyncFile);
+                    }
+
+                }
 
                 const data = await source.datastore.getDocMeta(sourceSyncDoc.fingerprint);
-                await target.datastore.write(sourceSyncDoc.fingerprint, data!, sourceSyncDoc.docMetaFileRef.docInfo);
+
+                if (data) {
+                    await target.datastore.write(sourceSyncDoc.fingerprint, data!, sourceSyncDoc.docMetaFileRef.docInfo);
+                } else {
+                    log.warn("No data for fingerprint: " + sourceSyncDoc.fingerprint);
+                }
 
                 ++result.docMeta.writes;
 
@@ -287,7 +319,7 @@ export class PersistenceLayers {
                 progress,
 
                 // this should be committed as we're starting with the source
-                // which we think should be at the commmitted level to start
+                // which we think should be at the committed level to start
                 // with
 
                 consistency: 'committed',
@@ -313,7 +345,7 @@ export class PersistenceLayers {
         const progressID
             = `transfer:source=${source.datastore.id},target=${target.datastore.id}`;
 
-        const progressTracker = new ProgressTracker(sourceSyncDocs.length, progressID);
+        const progressTracker = new ProgressTracker({total: sourceSyncDocs.length, id: progressID});
 
         for (const sourceSyncDoc of sourceSyncDocs) {
 

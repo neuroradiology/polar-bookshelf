@@ -1,13 +1,37 @@
-import {URLs} from '../../../util/URLs';
+import {URLs} from 'polar-shared/src/util/URLs';
 import {Firebase} from '../../../firebase/Firebase';
-import * as firebase from '../../../firebase/lib/firebase';
-import {AppRuntime} from '../../../AppRuntime';
-import {Optional} from '../../../util/ts/Optional';
-import {ISODateTimeString} from '../../../metadata/ISODateTimeStrings';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {ISODateTimeString} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {Billing} from "polar-accounts/src/Billing";
+import {Account} from "../../../accounts/Account";
+import {Accounts} from "../../../accounts/Accounts";
+import {SignInSuccessURLs} from "../../../../../apps/repository/js/login/SignInSuccessURLs";
+
+// TODO: I don't like this so we're going to have to find a solution long term.
+const POLAR_APP_SITES = [
+    'http://localhost:8050',
+    'http://127.0.0.1:8050',
+    'http://localhost:8500',
+    'http://127.0.0.1:8500',
+    'http://localhost:9000',
+    'http://127.0.0.1:9000',
+    'http://localhost:9500',
+    'http://127.0.0.1:9500',
+    'https://app.getpolarized.io',
+    'https://beta.getpolarized.io',
+    'http://dev.getpolarized.io:8050'
+];
 
 export interface AuthHandler {
 
-    authenticate(): Promise<void>;
+    readonly id: string;
+
+    /**
+     *
+     * @param signInSuccessUrl The URL to redirect to if we're logging in to a
+     * specific portion of the app.
+     */
+    authenticate(signInSuccessUrl?: string): void;
 
     status(): Promise<AuthStatus>;
 
@@ -15,38 +39,33 @@ export interface AuthHandler {
 
 }
 
+
+function computeBaseURL() {
+
+    // TODO: this could use origin...
+    const base = URLs.toBase(document.location!.href);
+
+    if (! POLAR_APP_SITES.includes(base)) {
+        return 'https://app.getpolarized.io';
+    } else {
+        return base;
+    }
+
+}
+
 export class AuthHandlers {
 
     public static get(): AuthHandler {
-
-        if (AppRuntime.isElectron()) {
-
-            // TODO: Electron can acutally use the BrowserAuthHandler
-            // just fine...
-            return new ElectronAuthHandler();
-
-        } else if (AppRuntime.isBrowser()) {
-
-            return new BrowserAuthHandler();
-
-        } else {
-            throw new Error("No auth handler.");
-        }
-
+        return new BrowserAuthHandler();
     }
 
 }
 
 abstract class DefaultAuthHandler implements AuthHandler {
 
-    public async authenticate(): Promise<void> {
+    readonly id: string = 'default';
 
-        const base = URLs.toBase(document.location!.href);
-        const newLocation = new URL('/apps/repository/login.html', base).toString();
-
-        window.location.href = newLocation;
-
-    }
+    public abstract authenticate(): void;
 
     public async userInfo(): Promise<Optional<UserInfo>> {
         return Optional.empty();
@@ -56,8 +75,43 @@ abstract class DefaultAuthHandler implements AuthHandler {
 
 }
 
+export function toUserInfo(user: firebase.User, account: Account | undefined): UserInfo {
+
+    const createSubscription = (): Billing.Subscription => {
+
+        if (account) {
+            return {
+                plan: account.plan,
+                interval: account.interval || 'month'
+            };
+        } else {
+            return {
+                plan: 'free',
+                interval: 'month'
+            };
+        }
+
+    };
+
+    const subscription = createSubscription();
+
+    return {
+        displayName: Optional.of(user.displayName).getOrUndefined(),
+        email: Optional.of(user.email).get(),
+        emailVerified: user.emailVerified,
+        photoURL: Optional.of(user.photoURL).getOrUndefined(),
+        uid: user.uid,
+        creationTime: user.metadata.creationTime!,
+        subscription
+    };
+
+}
+
 export abstract class FirebaseAuthHandler extends DefaultAuthHandler {
 
+    /**
+     * @Deprecated useUserInfoContext
+     */
     public async userInfo(): Promise<Optional<UserInfo>> {
 
         Firebase.init();
@@ -68,47 +122,38 @@ export abstract class FirebaseAuthHandler extends DefaultAuthHandler {
             return Optional.empty();
         }
 
-        return Optional.of({
-            displayName: Optional.of(user.displayName).getOrUndefined(),
-            email: Optional.of(user.email).getOrUndefined(),
-            emailVerified: user.emailVerified,
-            photoURL: Optional.of(user.photoURL).getOrUndefined(),
-            uid: user.uid,
-            creationTime: user.metadata.creationTime!
-        });
+        const account = await Accounts.get();
+
+        return Optional.of(toUserInfo(user, account));
 
     }
 
     protected async currentUser(): Promise<firebase.User | null> {
-
-        Firebase.init();
-
-        return new Promise<firebase.User | null>((resolve, reject) => {
-
-            const unsubscribe = firebase.auth()
-                .onAuthStateChanged((user) => {
-                                        unsubscribe();
-                                        resolve(user);
-                                    },
-                                    (err) => {
-                                        unsubscribe();
-                                        reject(err);
-                                    });
-
-        });
-
+        return await Firebase.currentUserAsync();
     }
 
 }
 
 export class BrowserAuthHandler extends FirebaseAuthHandler {
 
-    public async authenticate(): Promise<void> {
+    readonly id: string = 'browser';
+
+    public async authenticate(signInSuccessUrl?: string): Promise<void> {
 
         Firebase.init();
 
-        const base = URLs.toBase(document.location!.href);
-        const newLocation = new URL('/login.html', base).toString();
+        function createLoginURL() {
+            const base = computeBaseURL();
+            const target = new URL('/login', base).toString();
+            return SignInSuccessURLs.createSignInURL(signInSuccessUrl, target);
+        }
+
+        const newLocation = createLoginURL();
+
+        console.log("Redirecting to authenticate: " + newLocation);
+
+        // TODO useHistory here to push so that the app doesn't have to
+        // reload but the problem is that we need to use hooks for this...
 
         window.location.href = newLocation;
 
@@ -128,16 +173,6 @@ export class BrowserAuthHandler extends FirebaseAuthHandler {
 
 }
 
-export class ElectronAuthHandler extends FirebaseAuthHandler {
-
-    public async status(): Promise<AuthStatus> {
-
-        return undefined;
-
-    }
-
-}
-
 export type AuthStatus = 'needs-authentication' |  undefined;
 
 /**
@@ -147,10 +182,19 @@ export type AuthStatus = 'needs-authentication' |  undefined;
 export interface UserInfo {
 
     readonly displayName?: string;
-    readonly email?: string;
+    readonly email: string;
     readonly emailVerified: boolean;
     readonly photoURL?: string;
     readonly uid: string;
+
+    /**
+     * The time the account was created on our end.
+     */
     readonly creationTime: ISODateTimeString;
+
+    /**
+     * The users subscription level.
+     */
+    readonly subscription: Billing.Subscription;
 
 }

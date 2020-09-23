@@ -1,10 +1,10 @@
 import {assertJSON} from '../test/Assertions';
 import {Flashcards} from './Flashcards';
-import {Texts} from './Texts';
-import {TextType} from './TextType';
-import {FlashcardType} from './FlashcardType';
+import {Texts} from 'polar-shared/src/metadata/Texts';
+import {TextType} from 'polar-shared/src/metadata/TextType';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
 import {Flashcard} from './Flashcard';
-import {TestingTime} from '../test/TestingTime';
+import {TestingTime} from 'polar-shared/src/test/TestingTime';
 
 TestingTime.freeze();
 
@@ -73,36 +73,6 @@ describe('Flashcards', function() {
             const parsed = JSON.parse(JSON.stringify(flashcard));
 
             new Flashcard(<Flashcard> parsed);
-
-        });
-
-    });
-
-    describe('createFromSchemaFormData', function() {
-
-        it("basic", function() {
-
-            const flashcard = Flashcards.createFromSchemaFormData(FORM_DATA, archetype, 'page:1');
-
-            const expected = {
-                "id": "18HUWUqgtV",
-                "guid": "18HUWUqgtV",
-                "created": "2012-03-02T11:38:49.321Z",
-                "lastUpdated": "2012-03-02T11:38:49.321Z",
-                "type": "BASIC_FRONT_BACK",
-                "fields": {
-                    "back": {
-                        "HTML": "This is the back"
-                    },
-                    "front": {
-                        "HTML": "This is the front"
-                    }
-                },
-                "archetype": "9d146db1-7c31-4bcf-866b-7b485c4e50ea",
-                "ref": "page:1"
-            };
-
-            assertJSON(flashcard, expected);
 
         });
 

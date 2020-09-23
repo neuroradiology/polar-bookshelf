@@ -1,19 +1,12 @@
-import {FilePaths} from '../../util/FilePaths';
+import {FilePaths} from 'polar-shared/src/util/FilePaths';
 import {AddFileRequest} from './AddFileRequest';
-import {Optional} from '../../util/ts/Optional';
-import {PathStr} from '../../util/Strings';
-import {AppRuntime} from '../../AppRuntime';
-import {ProgressToasters} from '../../ui/progress_toaster/ProgressToasters';
-import {Aborters, Files} from '../../util/Files';
-import {isPresent} from '../../Preconditions';
-import {Reducers} from '../../util/Reducers';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {Reducers} from 'polar-shared/src/util/Reducers';
 
-const TOASTER_DESTROY_DELAY = 500;
-const MAX_RECURSIVE_DIRECTORY_SCAN_DURATION = "30s";
+export namespace AddFileRequests {
 
-export class AddFileRequests {
-
-    public static fromURL(url: string): AddFileRequest {
+    export function fromURL(url: string): AddFileRequest {
 
         const toBasename = (input: string): string => {
             input = input.replace( /[?#].*$/, '');
@@ -43,7 +36,7 @@ export class AddFileRequests {
 
     }
 
-    public static fromPath(path: string): AddFileRequest {
+    export function fromPath(path: string): AddFileRequest {
 
         return {
             docPath: path,
@@ -52,113 +45,112 @@ export class AddFileRequests {
 
     }
 
-    public static computeDirectly(event: DragEvent): AddFileRequest[] {
+    export function computeDirectly(event: DragEvent): AddFileRequest[] {
 
         if (event.dataTransfer && event.dataTransfer.files) {
-
-            return this.computeFromFileList(event.dataTransfer.files);
-
+            return computeFromFileList(Array.from(event.dataTransfer.files));
         } else {
             return [];
         }
 
     }
 
-    public static computeFromFileList(files: FileList): AddFileRequest[] {
-
-        return Array.from(files)
-            .filter(file => file.name.endsWith(".pdf"))
-            .map(file => {
-
-                if (file.path) {
-
-                    // On Electron we have the file path directly.
-                    return {
-                        docPath: file.path,
-                        basename: FilePaths.basename(file.path)
-                    };
-
-                } else {
-
-                    // https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL
-
-                    return {
-                        docPath: URL.createObjectURL(file),
-                        basename: file.name,
-                    };
-                }
-
-            });
-
+    function isFileSupported(name: string) {
+        return FilePaths.hasExtension(name, 'pdf') || FilePaths.hasExtension(name, 'epub')
     }
 
-    /**
-     * @ElectronRendererContext
-     * @BrowserContext
-     * @param event
-     */
-    public static async computeRecursively(event: DragEvent): Promise<Optional<AddFileRequest[]>> {
+    export function computeFromFileList(files: ReadonlyArray<File>): AddFileRequest[] {
 
-        if (AppRuntime.isElectron()) {
+        function toAddFileRequest(file: File): AddFileRequest {
 
-            if (event.dataTransfer) {
+            if (file.path) {
 
-                // TODO: I don't like embedding the UI component in here
-                // directly...
+                // On Electron we have the file path directly.
+                return {
+                    docPath: file.path,
+                    basename: FilePaths.basename(file.path)
+                };
 
-                const progressToaster = await ProgressToasters.create();
+            } else {
 
-                try {
+                // https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL
 
-                    // the aborter will just throw an exception if the timeout
-                    // exceeds and the caller should show an error.
-                    const aborter = Aborters.maxTime(MAX_RECURSIVE_DIRECTORY_SCAN_DURATION);
-
-                    const paths = Array.from(event.dataTransfer.files)
-                        .map(file => file.path);
-
-                    const acceptedFiles: PathStr[] = [];
-
-                    for (const path of paths) {
-
-                        if (await Files.fileType(path) === 'directory') {
-
-                            await Files.recursively(path, async newPath => {
-
-                                if (newPath.endsWith(".pdf")) {
-                                    acceptedFiles.push(newPath);
-                                }
-
-                                progressToaster.update({
-                                    title: `Finding files (${acceptedFiles.length}): `,
-                                    status: newPath
-                                });
-
-                            }, aborter);
-
-                        }
-
-                    }
-
-                    const addFileRequests =
-                        acceptedFiles.map(current => {
-                            return {
-                                docPath: current,
-                                basename: FilePaths.basename(current)
-                            };
-                        });
-
-                    return Optional.of(addFileRequests);
-
-                } finally {
-
-                    setTimeout(() => progressToaster.destroy(), TOASTER_DESTROY_DELAY);
-
-                }
-
+                return {
+                    docPath: URL.createObjectURL(file),
+                    basename: file.name,
+                };
             }
 
         }
+
+        return Array.from(files)
+            .filter(file => isFileSupported(file.name))
+            .map(toAddFileRequest);
+
+    }
+
+    export async function computeRecursively(event: DragEvent): Promise<Optional<AddFileRequest[]>> {
+
+        // if (AppRuntime.isElectron()) {
+        //
+        //     if (event.dataTransfer) {
+        //
+        //         // TODO: I don't like embedding the UI component in here
+        //         // directly...
+        //
+        //         const progressToaster = await ProgressToasters.create();
+        //
+        //         try {
+        //
+        //             // the aborter will just throw an exception if the timeout
+        //             // exceeds and the caller should show an error.
+        //             const aborter = Aborters.maxTime(MAX_RECURSIVE_DIRECTORY_SCAN_DURATION);
+        //
+        //             const paths = Array.from(event.dataTransfer.files)
+        //                 .map(file => file.path);
+        //
+        //             const acceptedFiles: PathStr[] = [];
+        //
+        //             for (const path of paths) {
+        //
+        //                 if (await Files.fileType(path) === 'directory') {
+        //
+        //                     await Files.recursively(path, async newPath => {
+        //
+        //                         if (isFileSupported(newPath.toLocaleLowerCase())) {
+        //                             acceptedFiles.push(newPath);
+        //                         }
+        //
+        //                         progressToaster.update({
+        //                             title: `Finding files (${acceptedFiles.length}): `,
+        //                             status: newPath
+        //                         });
+        //
+        //                     }, aborter);
+        //
+        //                 }
+        //
+        //             }
+        //
+        //             const addFileRequests =
+        //                 acceptedFiles.map(current => {
+        //                     return {
+        //                         docPath: current,
+        //                         basename: FilePaths.basename(current)
+        //                     };
+        //                 });
+        //
+        //             return Optional.of(addFileRequests);
+        //
+        //         } finally {
+        //
+        //             setTimeout(() => progressToaster.destroy(), TOASTER_DESTROY_DELAY);
+        //
+        //         }
+        //
+        //     }
+        //
+        // }
 
         return Optional.empty();
 

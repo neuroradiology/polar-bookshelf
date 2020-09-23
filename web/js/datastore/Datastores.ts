@@ -1,26 +1,29 @@
-import {Datastore, DocMetaMutation, DocMetaSnapshotBatch, DocMetaSnapshotEventListener, SnapshotResult} from './Datastore';
-import {NetworkLayer} from './Datastore';
-import {FileRef} from './Datastore';
-import {BackendFileRef} from './Datastore';
+import {
+    Datastore,
+    DocMetaMutation,
+    DocMetaSnapshotBatch,
+    DocMetaSnapshotEventListener,
+    SnapshotResult
+} from './Datastore';
 import {MemoryDatastore} from './MemoryDatastore';
 import {DiskDatastore} from './DiskDatastore';
-import {Logger} from '../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {DocMetaFileRefs, DocMetaRef} from './DocMetaRef';
-import {DocMeta} from '../metadata/DocMeta';
 import {DocMetas} from '../metadata/DocMetas';
-import {NULL_FUNCTION} from '../util/Functions';
-import {Percentages} from '../util/Percentages';
-import {ProgressTracker} from '../util/ProgressTracker';
-import {AsyncProviders} from '../util/Providers';
+import {NULL_FUNCTION} from 'polar-shared/src/util/Functions';
+import {Percentages} from 'polar-shared/src/util/Percentages';
+import {ProgressTracker} from 'polar-shared/src/util/ProgressTracker';
+import {AsyncProviders} from 'polar-shared/src/util/Providers';
 import {DefaultPersistenceLayer} from './DefaultPersistenceLayer';
-import {DocInfo} from '../metadata/DocInfo';
 import deepEqual from 'deep-equal';
-import {Preconditions} from '../Preconditions';
-import {AsyncFunction, AsyncWorkQueue} from '../util/AsyncWorkQueue';
-import {Backend} from './Backend';
-import {Either} from '../util/Either';
-import {LeftEither} from '../util/Either';
-import {DocInfoLike} from '../metadata/DocInfo';
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import {
+    AsyncFunction,
+    AsyncWorkQueue
+} from 'polar-shared/src/util/AsyncWorkQueue';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {NetworkLayer} from "polar-shared/src/datastore/IDatastore";
 
 const log = Logger.create();
 
@@ -41,76 +44,9 @@ export class Datastores {
 
     }
 
-    /**
-     * Get the main BackendFileRef (PHZ or PDF) for this file (either the
-     * PHZ or PDF file)
-     */
-    public static toBackendFileRef(either: LeftEither<DocMeta, DocInfoLike>): BackendFileRef | undefined {
-
-        if (! either) {
-            return undefined;
-        }
-
-        const docInfo =
-            Either.ofLeft(either)
-                  .convertLeftToRight(left => left.docInfo);
-
-        if (docInfo.filename) {
-
-            // return the existing doc meta information.
-
-            const backend = docInfo.backend || Backend.STASH;
-
-            const backendFileRef: BackendFileRef = {
-                name: docInfo.filename,
-                hashcode: docInfo.hashcode,
-                backend
-            };
-
-            return backendFileRef;
-
-        }
-
-        return undefined;
-
-    }
-
-    /**
-     * Get all FileRefs for this DocMeta including the main doc but also
-     * any image, audio, or video attachments.
-     */
-    public static toBackendFileRefs(either: LeftEither<DocMeta, DocInfoLike>): ReadonlyArray<BackendFileRef> {
-
-        const result: BackendFileRef[] = [];
-
-        const fileRef = this.toBackendFileRef(either);
-
-        const docInfo =
-            Either.ofLeft(either)
-                .convertLeftToRight(left => left.docInfo);
-
-        if (fileRef) {
-
-            const backend = docInfo.backend || Backend.STASH;
-
-            // this is the main FileRef of the file (PHZ or PDF)
-            result.push({backend, ...fileRef});
-
-        }
-
-        const attachments = docInfo.attachments || {};
-        const attachmentRefs = Object.values(attachments)
-            .map(current => current.data);
-
-        result.push(...attachmentRefs);
-
-        return result;
-
-    }
-
     public static async getDocMetas(datastore: Datastore,
                                     listener: DocMetaListener,
-                                    docMetaRefs?: DocMetaRef[]) {
+                                    docMetaRefs?: ReadonlyArray<DocMetaRef>) {
 
         if (!docMetaRefs) {
             docMetaRefs = await datastore.getDocMetaRefs();
@@ -138,6 +74,8 @@ export class Datastores {
                                                 listener: DocMetaSnapshotEventListener,
                                                 batch?: DocMetaSnapshotBatch): Promise<SnapshotResult> {
 
+        console.time("createCommittedSnapshot");
+
         if (! batch) {
 
             // for most of our usages we just receive the first batch and we're
@@ -150,10 +88,11 @@ export class Datastores {
 
         }
 
+        console.time("getDocMetaRefs");
         const docMetaFiles = await datastore.getDocMetaRefs();
+        console.timeEnd("getDocMetaRefs");
 
-        const progressTracker = new ProgressTracker(docMetaFiles.length,
-                                                    `datastore:${datastore.id}#snapshot`);
+        const progressTracker = new ProgressTracker({total: docMetaFiles.length, id: `datastore:${datastore.id}#snapshot`});
 
         // TODO: we call the listener too many times here but we might want to
         // batch it in the future so that the listener doesn't get called too
@@ -168,14 +107,55 @@ export class Datastores {
         // percMax))   This will give us an ideal batch size so that we update
         // the UI every 1% OR the maxBatchSize...
 
+        const durations = {
+            data: 0,
+            docMeta: 0,
+            docInfo: 0,
+            docMetaFileRef: 0
+        }
+
         for (const docMetaFile of docMetaFiles) {
+
+            // console.time("docMetaFile:" + docMetaFile.fingerprint);
 
             // // TODO: in the cloud store implementation it will probably be much
             // // faster to use a file JUST for the DocInfo to speed up loading.
-            const dataProvider = AsyncProviders.memoize(async () => await datastore.getDocMeta(docMetaFile.fingerprint));
-            const docMetaProvider = AsyncProviders.memoize(async () => DocMetas.deserialize((await dataProvider())!, docMetaFile.fingerprint));
-            const docInfoProvider = AsyncProviders.memoize(async () => (await docMetaProvider()).docInfo);
-            const docMetaFileRefProvider = AsyncProviders.memoize(async () => DocMetaFileRefs.createFromDocInfo(await docInfoProvider()));
+            const dataProvider = AsyncProviders.memoize(async () => {
+                const before = Date.now();
+                try {
+                    return await datastore.getDocMeta(docMetaFile.fingerprint);
+                } finally {
+                    durations.data += Date.now() - before;
+                }
+            });
+
+            const docMetaProvider = AsyncProviders.memoize(async () => {
+                const before = Date.now();
+                try {
+                    const data = await dataProvider();
+                    return DocMetas.deserialize(data!, docMetaFile.fingerprint);
+                } finally {
+                    durations.docMeta += Date.now() - before;
+                }
+            });
+
+            const docInfoProvider = AsyncProviders.memoize(async () => {
+                const before = Date.now();
+                try {
+                    return (await docMetaProvider()).docInfo;
+                } finally {
+                    durations.docInfo += Date.now() - before;
+                }
+            });
+
+            const docMetaFileRefProvider = AsyncProviders.memoize(async () => {
+                const before = Date.now();
+                try {
+                    return DocMetaFileRefs.createFromDocInfo(await docInfoProvider());
+                } finally {
+                    durations.docMetaFileRef += Date.now() - before;
+                }
+            });
 
             const docMetaMutation: DocMetaMutation = {
                 fingerprint: docMetaFile.fingerprint,
@@ -194,7 +174,11 @@ export class Datastores {
                 batch
             });
 
+            // console.timeEnd("docMetaFile:" + docMetaFile.fingerprint);
+
         }
+
+        console.log("Durations: ", durations);
 
         await listener({
             datastore: datastore.id,
@@ -207,6 +191,8 @@ export class Datastores {
             }
         });
 
+        console.timeEnd("createCommittedSnapshot");
+
         return { };
 
     }
@@ -218,7 +204,9 @@ export class Datastores {
     public static async purge(datastore: Datastore,
                               purgeListener: PurgeListener = NULL_FUNCTION) {
 
+        log.debug("Getting doc meta refs...");
         const docMetaFiles = await datastore.getDocMetaRefs();
+        log.debug("Getting doc meta refs...done");
 
         let completed: number = 0;
         const total: number = docMetaFiles.length;
@@ -238,6 +226,8 @@ export class Datastores {
             // directly which is error prone.
 
             work.push(async () => {
+
+                log.debug(`Purging file: ${docMetaFile.fingerprint} in datastore ${datastore.id}`);
 
                 const data = await datastore.getDocMeta(docMetaFile.fingerprint);
                 const docMeta = DocMetas.deserialize(data!, docMetaFile.fingerprint);
@@ -282,15 +272,15 @@ export class Datastores {
 
     }
 
-    public static async toDocInfoManifest(datastore: Datastore): Promise<ReadonlyArray<DocInfo>> {
+    public static async toDocInfoManifest(datastore: Datastore): Promise<ReadonlyArray<IDocInfo>> {
 
         const persistenceLayer = new DefaultPersistenceLayer(datastore);
 
-        const docMetaFiles =
-            (await datastore.getDocMetaRefs())
-                .sort((d0, d1) => d0.fingerprint.localeCompare(d1.fingerprint));
+        const docMetaRefs = await datastore.getDocMetaRefs();
+        const docMetaFiles = [...docMetaRefs]
+            .sort((d0, d1) => d0.fingerprint.localeCompare(d1.fingerprint));
 
-        const result: DocInfo[] = [];
+        const result: IDocInfo[] = [];
 
         for (const docMetaFile of docMetaFiles) {
             const docMeta = await persistenceLayer.getDocMeta(docMetaFile.fingerprint);
@@ -323,7 +313,7 @@ export class Datastores {
 
 }
 
-export type DocMetaListener = (docMeta: DocMeta) => void;
+export type DocMetaListener = (docMeta: IDocMeta) => void;
 
 export interface PurgeEvent {
     readonly completed: number;
@@ -335,6 +325,6 @@ export type PurgeListener = (purgeEvent: PurgeEvent) => void;
 
 export interface DatastoreConsistency {
     readonly consistent: boolean;
-    readonly manifest0: ReadonlyArray<DocInfo>;
-    readonly manifest1: ReadonlyArray<DocInfo>;
+    readonly manifest0: ReadonlyArray<IDocInfo>;
+    readonly manifest1: ReadonlyArray<IDocInfo>;
 }

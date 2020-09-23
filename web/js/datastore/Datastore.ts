@@ -1,24 +1,101 @@
 // A datastore that supports ledgers and checkpoints.
 import {DocMetaFileRef, DocMetaFileRefs, DocMetaRef} from './DocMetaRef';
-import {DeleteResult} from './Datastore';
-import {Backend} from './Backend';
-import {DocFileMeta} from './DocFileMeta';
-import {Optional} from '../util/ts/Optional';
-import {DocInfo, IDocInfo} from '../metadata/DocInfo';
-import {FileHandle} from '../util/Files';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {FileHandle, FileHandles} from 'polar-shared/src/util/Files';
 import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
-import {DocMeta} from '../metadata/DocMeta';
-import {Hashcode} from '../metadata/Hashcode';
-import {Progress} from '../util/ProgressTracker';
-import {AsyncProvider} from '../util/Providers';
-import {UUID} from '../metadata/UUID';
-import {AsyncWorkQueues} from '../util/AsyncWorkQueues';
+import {
+    DeterminateProgress,
+    IndeterminateProgress,
+    Progress,
+} from 'polar-shared/src/util/ProgressTracker';
+import {AsyncProvider} from 'polar-shared/src/util/Providers';
+import {UUID} from 'polar-shared/src/metadata/UUID';
+import {AsyncWorkQueues} from 'polar-shared/src/util/AsyncWorkQueues';
 import {DocMetas} from '../metadata/DocMetas';
 import {DatastoreMutations} from './DatastoreMutations';
-import {ISODateTimeString} from '../metadata/ISODateTimeStrings';
-import {Prefs} from '../util/prefs/Prefs';
-import {isPresent} from '../Preconditions';
-import {printf} from '../logger/Console';
+import {ISODateTimeString} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {
+    InterceptedPersistentPrefs,
+    InterceptedPersistentPrefsFactory,
+    PersistentPrefs
+} from '../util/prefs/Prefs';
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {Either} from '../util/Either';
+import {BackendFileRefs} from './BackendFileRefs';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {BackendFileRef} from "polar-shared/src/datastore/BackendFileRef";
+import {Visibility} from "polar-shared/src/datastore/Visibility";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {IDStr, PathStr, URLStr} from "polar-shared/src/util/Strings";
+import {NULL_FUNCTION} from "polar-shared/src/util/Functions";
+import {SimpleReactor} from "../reactor/SimpleReactor";
+import {
+    OnErrorCallback,
+    SnapshotUnsubscriber
+} from 'polar-shared/src/util/Snapshots';
+import {
+    NetworkLayer,
+    ReadableBinaryDatastore
+} from "polar-shared/src/datastore/IDatastore";
+
+export type DocMetaSnapshotSource = 'default' | 'server' | 'cache';
+
+export interface DocMetaSnapshot<T> {
+
+    readonly data: T | undefined;
+
+    readonly hasPendingWrites: boolean;
+
+    /**
+     * Where this data was loaded from
+     */
+    readonly source: 'server' | 'cache';
+
+    readonly unsubscriber: SnapshotUnsubscriber;
+
+}
+
+export interface DocMetaSnapshotError {
+
+    readonly err: Error;
+
+    readonly unsubscriber: SnapshotUnsubscriber;
+
+}
+
+
+export interface DocMetaSnapshotOpts<T> {
+
+    /**
+     * The fingerprint of the document we want to fetch.
+     */
+    readonly fingerprint: IDStr;
+
+    /**
+     * Called for each document update.  The value (as a string) of the DocMeta
+     * or undefined if the document is not in the datastore.
+     */
+    readonly onSnapshot: (snapshot: DocMetaSnapshot<T>) => void;
+
+    /**
+     * Called on any error on updates when fetching snapshots.
+     */
+    readonly onError?: (err: DocMetaSnapshotError) => void;
+
+    /**
+     * The source of the snapshot, when applicable.  Can be server or cache
+     * for firebase and cloud so that we can fetch from a specific source if we
+     * want.  The default is to fetch from cache to begin.
+     */
+    readonly source?: DocMetaSnapshotSource;
+
+}
+
+export interface DocMetaSnapshotResult {
+    readonly unsubscriber: SnapshotUnsubscriber;
+}
 
 export interface Datastore extends BinaryDatastore, WritableDatastore {
 
@@ -49,9 +126,14 @@ export interface Datastore extends BinaryDatastore, WritableDatastore {
     getDocMeta(fingerprint: string): Promise<string | null>;
 
     /**
+     * Get DocMeta from this datastore and send snapshots when we have updates over time.
+     */
+    getDocMetaSnapshot(opts: DocMetaSnapshotOpts<string>): Promise<DocMetaSnapshotResult>;
+
+    /**
      * Return an array of {DocMetaRef}s currently in the repository.
      */
-    getDocMetaRefs(): Promise<DocMetaRef[]>;
+    getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>>;
 
     /**
      * Get a current snapshot of the internal state of the Datastore by
@@ -113,6 +195,11 @@ export interface DatastoreCapabilities {
 
     readonly permission: DatastorePermission;
 
+    /**
+     * True if this datastore supports snapshots.
+     */
+    readonly snapshots?: true;
+
 }
 
 export interface DatastoreInfo {
@@ -148,14 +235,50 @@ export abstract class AbstractDatastore {
         this.datastoreMutations = DatastoreMutations.create('written');
 
     }
-    public async writeDocMeta(docMeta: DocMeta,
-                              datastoreMutation: DatastoreMutation<DocInfo> = new DefaultDatastoreMutation()): Promise<DocInfo> {
 
-        const data = DocMetas.serialize(docMeta);
+    public abstract async getDocMeta(fingerprint: string): Promise<string | null>;
+
+    /**
+     * Default implementation provides no updates.  Used by default with
+     * DiskDatastore, MemoryDatastore, etc.
+     */
+    public async getDocMetaSnapshot(opts: DocMetaSnapshotOpts<string>): Promise<DocMetaSnapshotResult> {
+
+        const unsubscriber = NULL_FUNCTION;
+
+        try {
+
+            const data = await this.getDocMeta(opts.fingerprint);
+
+            opts.onSnapshot({
+                data: data || undefined,
+                hasPendingWrites: false,
+                source: 'server',
+                unsubscriber
+            });
+
+        } catch (e) {
+
+            if (opts.onError) {
+                opts.onError(e);
+            }
+
+        }
+
+        return {
+            unsubscriber
+        };
+
+    }
+
+    public async writeDocMeta(docMeta: IDocMeta,
+                              datastoreMutation: DatastoreMutation<IDocInfo> = new DefaultDatastoreMutation()): Promise<IDocInfo> {
+
+        const data = DocMetas.serialize(docMeta, "");
         const docInfo = docMeta.docInfo;
 
         const syncMutation = new DefaultDatastoreMutation<boolean>();
-        this.datastoreMutations.pipe(syncMutation, datastoreMutation, () => docInfo);
+        DatastoreMutations.pipe(syncMutation, datastoreMutation, () => docInfo);
 
         await this.write(docMeta.docInfo.fingerprint, data, docInfo, {datastoreMutation: syncMutation});
         return docInfo;
@@ -177,7 +300,7 @@ export abstract class AbstractDatastore {
         }
 
         if (opts.writeFile) {
-            await this.writeFile(opts.writeFile.backend, opts.writeFile, opts.writeFile.data);
+            await this.writeFile(opts.writeFile.backend, opts.writeFile, opts.writeFile.data, {progressListener: opts.progressListener});
         }
 
     }
@@ -205,15 +328,33 @@ export abstract class AbstractDatastore {
 
 }
 
-export interface WriteOpts {
 
-    readonly datastoreMutation?: DatastoreMutation<boolean>;
+export interface WriteOptsBase<T> {
+
+    readonly consistency?: DatastoreConsistency;
+
+    readonly datastoreMutation?: DatastoreMutation<T>;
 
     /**
      * Also write a file (PDF, PHZ) with the DocMeta data so that it's atomic
      * and that the operations are ordered properly.
      */
     readonly writeFile?: BackendFileRefData;
+
+    readonly visibility?: Visibility;
+
+    readonly groups?: ReadonlyArray<GroupIDStr>;
+
+    /**
+     * Specify a progress listener so that when you're writing a file you can
+     * keep track of the progress
+     */
+    readonly progressListener?: WriteFileProgressListener;
+
+}
+
+
+export interface WriteOpts extends WriteOptsBase<boolean> {
 
 }
 
@@ -226,7 +367,7 @@ interface WritableDatastore {
      */
     delete(docMetaFileRef: DocMetaFileRef, datastoreMutation?: DatastoreMutation<boolean>): Promise<Readonly<DeleteResult>>;
 
-    writeDocMeta(docMeta: DocMeta, datastoreMutation?: DatastoreMutation<DocInfo>): Promise<DocInfo>;
+    writeDocMeta(docMeta: IDocMeta, datastoreMutation?: DatastoreMutation<IDocInfo>): Promise<IDocInfo>;
 
     /**
      * Write the datastore to disk.  Writes should be idempotent.
@@ -254,35 +395,7 @@ interface WritableDatastore {
 /**
  * A datastore that support storage of binary data (images, videos, PDFs, etc).
  */
-interface BinaryDatastore extends ReadableBinaryDatastore, WritableBinaryDatastore {
-
-}
-
-interface ReadableBinaryDatastore {
-
-    containsFile(backend: Backend, ref: FileRef): Promise<boolean>;
-
-    getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>>;
-
-}
-
-/**
- * Options for getFile
- */
-export interface GetFileOpts {
-
-    /**
-     * Allows the caller to specify a more specific network layer for the
-     * file operation and returning a more specific URL.
-     */
-    readonly networkLayer?: NetworkLayer;
-
-    /**
-     * When true, we avoid the existence check on teh file when appropriate and
-     * we're pretty certain that the file already exists.  This can be helpful
-     * in the UI when we just want to open a file and we have fresh metadata.
-     */
-    readonly noExistenceCheck?: boolean;
+export interface BinaryDatastore extends ReadableBinaryDatastore, WritableBinaryDatastore {
 
 }
 
@@ -302,8 +415,24 @@ export interface WritableBinaryDatastore {
 
 }
 
+export interface BaseWriteFileProgress {
+    readonly ref: BackendFileRef;
+}
+
+export interface WriteFileProgressDeterminate extends DeterminateProgress, BaseWriteFileProgress {
+}
+export interface WriteFileProgressIndeterminate extends IndeterminateProgress, BaseWriteFileProgress {
+}
+
+export type WriteFileProgress = WriteFileProgressDeterminate | WriteFileProgressIndeterminate;
+
+export type WriteFileProgressListener = (progress: WriteFileProgress) => void;
+
 export interface WriteFileOpts {
 
+    /**
+     * @deprecated we no longer support arbitrary file metadata.
+     */
     readonly meta?: FileMeta;
 
     /**
@@ -318,6 +447,12 @@ export interface WriteFileOpts {
 
     readonly datastoreMutation?: DatastoreMutation<boolean>;
 
+    /**
+     * Specify a progress listener so that when you're writing a file you can
+     * keep track of the progress
+     */
+    readonly progressListener?: WriteFileProgressListener;
+
 }
 
 export class DefaultWriteFileOpts implements WriteFileOpts {
@@ -329,7 +464,84 @@ export interface WritableBinaryMetaDatastore {
     // writeFileMeta(backend: Backend, ref: FileRef, docFileMeta: DocFileMeta): Promise<void>;
 }
 
+export namespace sources {
+
+    export interface FileSource {
+        readonly file: PathStr;
+    }
+
+    export interface BufferSource {
+        readonly buffer: Buffer;
+    }
+
+    export interface StrSource {
+        readonly str: string;
+    }
+
+    export interface BlobSource {
+        readonly blob: Blob;
+    }
+
+    export interface StreamSource {
+        readonly stream: NodeJS.ReadableStream;
+    }
+
+    /**
+     * Just a pointer to a URL that can be fetched (possibly remotely)
+     */
+    export interface URLSource {
+        readonly url: URLStr;
+    }
+
+    export type DataSourceLiteral = FileSource | BufferSource | StrSource | BlobSource | StreamSource | URLSource;
+
+    /**
+     * Allows us to pass a function that then returns the DataSrc to handle.
+     */
+    export type DataSourceLiteralFactory = () => Promise<DataSourceLiteral>;
+
+    export type DataSource = DataSourceLiteral | DataSourceLiteralFactory;
+
+    export class DataSources {
+
+        public static async toLiteral(source: DataSource): Promise<DataSourceLiteral> {
+
+            if (typeof source === 'function') {
+                return source();
+            }
+
+            // we're already a literal now so just return that.
+            return source;
+
+        }
+
+    }
+
+}
+
 export type BinaryFileData = FileHandle | Buffer | string | Blob | NodeJS.ReadableStream;
+
+export type BinaryFileDataType = 'file-handle' | 'buffer' | 'string' | 'blob' | 'readable-stream';
+
+export class BinaryFileDatas {
+
+   public static toType(data: BinaryFileData): BinaryFileDataType {
+
+        if (typeof data === 'string') {
+            return 'string';
+        } else if (data instanceof Buffer) {
+            return 'buffer';
+        } else if (data instanceof Blob) {
+            return 'blob';
+        } else if (FileHandles.isFileHandle(data)) {
+            return 'file-handle';
+        } else {
+            return 'readable-stream';
+        }
+
+    }
+
+}
 
 export function isBinaryFileData(data: any): boolean {
 
@@ -355,35 +567,6 @@ export function isBinaryFileData(data: any): boolean {
     }
 
     return false;
-
-}
-
-export interface FileRef {
-
-    readonly name: string;
-
-    /**
-     * The hashcode for the content.  For now the hashcode is STRONGLY preferred
-     * but not required.
-     */
-    readonly hashcode?: Hashcode;
-
-}
-
-/**
- * A FileRef with a backend.
- */
-export interface BackendFileRef extends FileRef {
-
-    readonly backend: Backend;
-
-}
-
-export class BackendFileRefs {
-
-    public static equals(b0: BackendFileRef, b1: BackendFileRef): boolean {
-        return b0.backend === b1.backend && b0.name === b1.name && b0.hashcode === b1.hashcode;
-    }
 
 }
 
@@ -519,21 +702,21 @@ export class DocMetaSnapshotEvents {
         Promise<ReadonlyArray<IDocInfo>> {
 
         return AsyncWorkQueues
-            .awaitPromises(docMetaSnapshotEvent.docMetaMutations.map(current => current.docInfoProvider()));
+            .awaitAsyncFunctions(docMetaSnapshotEvent.docMetaMutations.map(current => current.docInfoProvider));
 
     }
 
     public static async toSyncDocs(docMetaSnapshotEvent: DocMetaSnapshotEvent):
         Promise<ReadonlyArray<SyncDoc>> {
 
-        const promises = docMetaSnapshotEvent.docMetaMutations.map(docMetaMutation => {
+        const typedAsyncFunctions = docMetaSnapshotEvent.docMetaMutations.map(docMetaMutation => {
             return async () => {
                 const docInfo = await docMetaMutation.docInfoProvider();
                 return SyncDocs.fromDocInfo(docInfo, docMetaMutation.mutationType);
             };
-        }).map(current => current());
+        });
 
-        return await AsyncWorkQueues.awaitPromises(promises);
+        return await AsyncWorkQueues.awaitAsyncFunctions(typedAsyncFunctions);
 
     }
 
@@ -572,7 +755,7 @@ export interface DocMetaSnapshotBatch {
  * 'written' means that it was written to a WAL or a local cache but may not
  * be fully committed to a cloud store, to all replicas of a database, etc.
  *
- * 'committed' means that it's fully commited and consistent with the current
+ * 'committed' means that it's fully committed and consistent with the current
  * state of a database system.  A read that is 'committed' means it is fully
  * up to date.
  *
@@ -584,14 +767,25 @@ export interface SnapshotProgress extends Readonly<Progress> {
 }
 
 /**
- * Only use one provider, either dataProvider, docMetaProvider, or
- * docInfoProvider, whichever is the most efficient and only read once ideally.
+ * A minimal DocMetaMutation that only has the fields we need.
  */
-export interface DocMetaMutation {
+export interface MinimalDocMetaMutation {
 
     readonly fingerprint: string;
 
     readonly mutationType: MutationType;
+
+    readonly docMetaProvider: AsyncProvider<IDocMeta | undefined>;
+
+    readonly docInfoProvider: AsyncProvider<IDocInfo>;
+
+}
+
+/**
+ * Only use one provider, either dataProvider, docMetaProvider, or
+ * docInfoProvider, whichever is the most efficient and only read once ideally.
+ */
+export interface DocMetaMutation extends MinimalDocMetaMutation {
 
     readonly docMetaFileRefProvider: AsyncProvider<DocMetaFileRef>;
 
@@ -600,10 +794,6 @@ export interface DocMetaMutation {
      * read/write directly to the Datastore without mutating anything.
      */
     readonly dataProvider: AsyncProvider<string | null>;
-
-    readonly docMetaProvider: AsyncProvider<DocMeta>;
-
-    readonly docInfoProvider: AsyncProvider<IDocInfo>;
 
 }
 
@@ -632,7 +822,7 @@ export interface DeleteResult {
 export type InitDocMetaEventListener = (initDocMetaEvent: InitDocMetaEvent) => void;
 
 export interface InitDocMetaEvent {
-    readonly docMeta: DocMeta;
+    readonly docMeta: IDocMeta;
 }
 
 /**
@@ -643,7 +833,7 @@ export interface InitDocMetaEvent {
  * (consistency, snapshots, etc) then we can surface this data to the user
  * without doing a double init.
  */
-export type InitLoadListener = (docMeta: DocMeta) => void;
+export type InitLoadListener = (docMeta: IDocMeta) => void;
 
 /**
  * The result of a snapshot call with an optional unsubscribe callback.
@@ -656,11 +846,6 @@ export interface SnapshotResult {
     readonly unsubscribe?: SnapshotUnsubscriber;
 
 }
-
-/**
- * A function for unsubscribing to future snapshot events.
- */
-export type SnapshotUnsubscriber = () => void;
 
 export interface SyncDocMap {
     [fingerprint: string]: SyncDoc;
@@ -708,6 +893,11 @@ export interface SyncDoc {
     readonly uuid?: UUID;
 
     /**
+     * The title of the doc from the DocInfo for debug purposes.
+     */
+    readonly title: string;
+
+    /**
      * The binary files reference by this doc.
      */
     readonly files: ReadonlyArray<SyncFile>;
@@ -718,11 +908,7 @@ export interface SyncDoc {
 /**
  * A lightweight reference to a binary file attached to a SyncDoc.
  */
-export interface SyncFile {
-
-    readonly backend: Backend;
-
-    readonly ref: FileRef;
+export interface SyncFile extends BackendFileRef {
 
 }
 
@@ -730,33 +916,11 @@ export class SyncDocs {
 
     public static fromDocInfo(docInfo: IDocInfo, mutationType: MutationType): SyncDoc {
 
-        const files: SyncFile[] = [];
-
-        // TODO: dedicated function to take IDocInfo and then extract the file
-        // references for them.  Then write() and delete() should make sure the
-        // file references are valid and setup properly before we write
-        // (I think).
-
-        // FIXME: this needs to migrate to using
-        // Datastores and BackendFileRegs to get the underlying files and the ref for
-        // it so that we can get all the attachments in one pass.
-
-        if (docInfo.filename) {
-
-            const stashFile: SyncFile = {
-                backend: Backend.STASH,
-                ref: {
-                    name: docInfo.filename!,
-                    hashcode: docInfo.hashcode
-                }
-            };
-
-            files.push(stashFile);
-
-        }
+        const files = BackendFileRefs.toBackendFileRefs(Either.ofRight(docInfo));
 
         return {
             fingerprint: docInfo.fingerprint,
+            title: docInfo.title || 'untitled',
             docMetaFileRef: DocMetaFileRefs.createFromDocInfo(docInfo),
             mutationType,
             uuid: docInfo.uuid,
@@ -769,7 +933,6 @@ export class SyncDocs {
 
 export type DatastoreID = string;
 
-
 export interface DatastoreInitOpts {
 
     readonly noInitialSnapshot?: boolean;
@@ -781,64 +944,121 @@ export interface DatastoreInitOpts {
 
 }
 
+export type PersistentPrefsUpdatedCallback = (prefs: PersistentPrefs | undefined) => void;
+
 export interface PrefsProvider {
 
     /**
-     * Get the latest copy of the prefs we're using.
+     * Get the users prefs.
      */
-    get(): Prefs;
+    get(): PersistentPrefs;
+
+    subscribe(onNext: PersistentPrefsUpdatedCallback, onError?: OnErrorCallback): SnapshotUnsubscriber;
 
 }
 
-export enum Visibility {
+export abstract class AbstractPrefsProvider implements PrefsProvider {
+
+    protected reactor = new SimpleReactor<PersistentPrefs | undefined>();
+
+    public abstract get(): PersistentPrefs;
 
     /**
-     * Only visible for the user.
+     * Register a callback with no event listeners for platforms like Firebase that provide listening to the underlying
+     * datastore.
      */
-    PRIVATE = 'private', /* or 0 */
+    protected register(onNext: PersistentPrefsUpdatedCallback, onError: OnErrorCallback) {
+        return NULL_FUNCTION;
+    }
 
     /**
-     * Only to users that this user is following.
+     * Default implementation of subscribe which should be used everywhere.
      */
-    FOLLOWING = 'following', /* or 1 */
+    public subscribe(onNext: PersistentPrefsUpdatedCallback, onError: OnErrorCallback): SnapshotUnsubscriber {
 
-    /**
-     * To anyone on the service.
-     */
-    PUBLIC = 'public' /* or 2 */
+        if (! this.get) {
+            throw new Error("No get method!");
+        }
+
+        const handleOnNext = (persistentPrefs: PersistentPrefs | undefined) => {
+
+            const interceptedPersistentPrefs = this.createInterceptedPersistentPrefs(persistentPrefs);
+            onNext(interceptedPersistentPrefs);
+
+        };
+
+        const eventListener = (persistentPrefs: PersistentPrefs | undefined) => handleOnNext(persistentPrefs);
+
+        const unsubscriber = this.register(eventListener, onError);
+
+        this.reactor.addEventListener(eventListener);
+
+        handleOnNext(this.createInterceptedPersistentPrefs(this.get()));
+
+        return () => {
+            this.reactor.removeEventListener(eventListener);
+            unsubscriber();
+        };
+
+    }
+
+    protected createInterceptedPersistentPrefs(persistentPrefs: PersistentPrefs | undefined): InterceptedPersistentPrefs | undefined {
+
+        function isIntercepted(persistentPrefs: PersistentPrefs): boolean {
+            return (<any> persistentPrefs).__intercepted === true;
+        }
+
+        if (persistentPrefs) {
+
+            if (isIntercepted(persistentPrefs)) {
+                // don't double intercept...
+                return <InterceptedPersistentPrefs> persistentPrefs;
+            }
+
+            const commit = async (): Promise<void> => {
+                this.reactor.dispatchEvent(persistentPrefs);
+                return persistentPrefs.commit();
+            };
+
+            return InterceptedPersistentPrefsFactory.create(persistentPrefs, commit);
+
+        } else {
+            return undefined;
+        }
+
+    }
 
 }
 
 /**
- * The network layer specifies the access to a resource based on the network
- * type.  By default each datastore figures out the ideal network layer to
- * return file references from but based on the capabilities the caller
- * can specify a specific layer.
- *
- * The following types are supported:
- *
- * local: Access via the local disk.
- *    - pros:
- *      - VERY fast
- *    - cons:
- *      - Not sharable with others
- *
- * web: Access is available via the public web.
- *    - pros:
- *       - sharing works
- *       - access across multiple devices
- *    - cons:
- *       - may not be usable for certain people (classified information, etC).
- *
+ * A prefs provider which has no update methods.
  */
-export type NetworkLayer = 'local' | 'web';
+export class DefaultPrefsProvider extends AbstractPrefsProvider {
 
-export class NetworkLayers {
+    constructor(private readonly prefs: PersistentPrefs) {
+        super();
+    }
 
-    public static LOCAL = new Set<NetworkLayer>(['local']);
-
-    public static LOCAL_AND_WEB = new Set<NetworkLayer>(['local', 'web']);
-
-    public static WEB = new Set<NetworkLayer>(['web']);
+    public get(): PersistentPrefs {
+        return this.createInterceptedPersistentPrefs(this.prefs)!;
+    }
 
 }
+
+
+export interface DatastorePrefs {
+
+    /**
+     * The actual PersistentPrefs object that we're using.
+     */
+    readonly prefs: PersistentPrefs;
+
+    /**
+     * An unsubscribe function used when onUpdated is provided for listening to new events.
+     */
+    readonly unsubscribe: () => void;
+
+}
+
+export type GroupIDStr = string;
+

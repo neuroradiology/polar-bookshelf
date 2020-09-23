@@ -89,29 +89,9 @@ function createGlobsRecursively(path, exts) {
 
 }
 
-function createPDFJSGlobs() {
-
-    return [
-
-        'pdfviewer/build/pdf.js',
-        'pdfviewer/build/pdf.worker.js',
-        'pdfviewer/web/viewer.js',
-        'pdfviewer/web/viewer.css',
-        'pdfviewer/web/index.html',
-        'pdfviewer/web/locale/en-US/viewer.properties',
-        'pdfviewer/web/locale/en-GB/viewer.properties',
-        ...createGlobsRecursively('pdfviewer/web/images', ["png", "svg"]),
-
-    ];
-
-}
-
 const globPatterns = [
 
     ...createGlobsRecursively('apps', STATIC_FILE_EXTENSIONS),
-    ...createGlobsRecursively('htmlviewer', JAVASCRIPT_AND_STATIC_FILE_EXTENSIONS),
-
-    ...createPDFJSGlobs(),
 
     ...createGlobsRecursively('pdfviewer-custom', JAVASCRIPT_AND_STATIC_FILE_EXTENSIONS),
     ...createGlobsRecursively('web/dist', JAVASCRIPT_AND_STATIC_FILE_EXTENSIONS),
@@ -123,37 +103,45 @@ const globPatterns = [
     'manifest.json',
     'apps/init.js',
     'apps/service-worker-registration.js',
-    // now the custom specified resources that we need for the webapp to
-    // function (scripts and CSS)
-    'node_modules/firebase/firebase.js',
-    'node_modules/firebaseui/dist/firebaseui.js',
-    'node_modules/firebaseui/dist/firebaseui.css',
-    'node_modules/react-table/react-table.css',
-    'node_modules/bootstrap/dist/css/bootstrap.min.css',
-    'node_modules/bootstrap/dist/css/bootstrap-grid.min.css',
-    'node_modules/bootstrap/dist/css/bootstrap-reboot.min.css',
-    'node_modules/toastr/build/toastr.min.css',
-    'node_modules/@fortawesome/fontawesome-free/css/all.min.css',
-    'node_modules/@burtonator/react-dropdown/dist/react-dropdown.css',
-    'node_modules/summernote/dist/summernote-bs4.css',
 
 ];
 
 console.log("Using static file globs: \n ", globPatterns.join("\n  "));
 console.log("====");
 
+// https://stackoverflow.com/questions/49482680/workbox-the-danger-of-self-skipwaiting
+// https://developers.google.com/web/tools/workbox/reference-docs/latest/module-workbox-build#.generateSW
 module.exports = {
     globDirectory: 'dist/public',
+    skipWaiting: true,
     globPatterns,
     globIgnores: [],
     globStrict: false,
     // stripPrefix: 'dist/public',
-    maximumFileSizeToCacheInBytes: 15000000,
-    // runtimeCaching: [{
-    //     urlPattern: /this\\.is\\.a\\.regex/,
-    //     handler: 'networkFirst'
-    // }]
+    maximumFileSizeToCacheInBytes: 150000000,
     swDest: 'dist/public/service-worker.js',
+    // runtimeCaching: [
+    //     {
+    //         urlPattern: /.*/,
+    //         handler: 'staleWhileRevalidate'
+    //     },
+    //     {
+    //         // these URLs are immutable based on content hash as computed by
+    //         // webpack so just use cacheFirst which only fetches them the
+    //         // first time
+    //         urlPattern: /https:\/\/storage.google.com\/stash/,
+    //         handler: 'CacheFirst'
+    //     }
+    // ],
+    // runtimeCaching: [
+    //     {
+    //         // these URLs are immutable based on content hash as computed by
+    //         // webpack so just use cacheFirst which only fetches them the
+    //         // first time
+    //         urlPattern: /web\/dist\/images\/.*/,
+    //         handler: 'CacheFirst'
+    //     }
+    // ],
     modifyURLPrefix: {
         // Remove a '/dist' prefix from the URLs:
         '/dist/public': ''

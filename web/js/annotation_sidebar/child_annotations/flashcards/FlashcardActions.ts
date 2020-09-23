@@ -1,52 +1,51 @@
-import {FlashcardType} from '../../../metadata/FlashcardType';
-import {FrontAndBackFields} from './flashcard_input/FlashcardInputs';
-import {ClozeFields} from './flashcard_input/FlashcardInputs';
-import {DocAnnotation} from '../../DocAnnotation';
-import {Functions} from '../../../util/Functions';
-import {Logger} from '../../../logger/Logger';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
+import {
+    ClozeFields,
+    FrontAndBackFields
+} from './flashcard_input/FlashcardInputs';
+import {IDocAnnotation} from '../../DocAnnotation';
 import {Flashcard} from '../../../metadata/Flashcard';
-import {Refs} from '../../../metadata/Refs';
+import {IRef, Refs} from 'polar-shared/src/metadata/Refs';
 import {Flashcards} from '../../../metadata/Flashcards';
-import {DocMeta} from '../../../metadata/DocMeta';
 import {DocMetas} from '../../../metadata/DocMetas';
-
-const log = Logger.create();
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {IPageMeta} from "polar-shared/src/metadata/IPageMeta";
+import {IDStr} from "polar-shared/src/util/Strings";
 
 export class FlashcardActions {
 
-    public static create(annotation: DocAnnotation,
+    public static create(parent: IRef,
+                         pageMeta: IPageMeta,
                          type: FlashcardType,
                          fields: FrontAndBackFields | ClozeFields) {
 
-        Functions.withTimeout(() => {
+        const flashcard = this.newInstanceFromParentRef(parent, type, fields);
 
-            const flashcard = this.newInstance(annotation, type, fields);
-
-            if (flashcard) {
-                annotation.pageMeta.flashcards[flashcard.id] = Flashcards.createMutable(flashcard);
-            }
-
-        }).catch(err => log.error(err));
+        if (flashcard) {
+            pageMeta.flashcards[flashcard.id] = Flashcards.createMutable(flashcard);
+        }
 
     }
 
-    public static update(docMeta: DocMeta,
-                         annotation: DocAnnotation,
+    // TODO: we dont' need the full existing flashcard here.. JUST the ID...
+    public static update(docMeta: IDocMeta,
+                         pageMeta: IPageMeta,
+                         parent: IRef,
                          type: FlashcardType,
                          fields: FrontAndBackFields | ClozeFields,
-                         existingFlashcard?: Flashcard) {
+                         existingFlashcardID?: IDStr) {
 
-        const flashcard = this.newInstance(annotation, type, fields);
+        const flashcard = this.newInstanceFromParentRef(parent, type, fields);
 
         if (flashcard) {
 
             DocMetas.withBatchedMutations(docMeta, () => {
 
-                if (existingFlashcard) {
-                    delete annotation.pageMeta.flashcards[existingFlashcard.id];
+                if (existingFlashcardID) {
+                    delete pageMeta.flashcards[existingFlashcardID];
                 }
 
-                annotation.pageMeta.flashcards[flashcard.id] = <Flashcard> {...flashcard};
+                pageMeta.flashcards[flashcard.id] = <Flashcard> {...flashcard};
 
             });
 
@@ -54,14 +53,38 @@ export class FlashcardActions {
 
     }
 
+    public static delete(docMeta: IDocMeta,
+                         pageMeta: IPageMeta,
+                         parent: IRef,
+                         existingID: IDStr) {
+
+        DocMetas.withBatchedMutations(docMeta, () => {
+            delete pageMeta.flashcards[existingID];
+        });
+
+    }
+
     /**
      * Create a new instance from the given fields.
      */
-    private static newInstance(annotation: DocAnnotation,
+    private static newInstance(parent: IDocAnnotation,
                                type: FlashcardType,
                                fields: FrontAndBackFields | ClozeFields): Flashcard | undefined {
 
-        const ref = Refs.createFromAnnotationType(annotation.id, annotation.annotationType);
+        const parentRef: IRef = {
+            value: parent.id,
+            type: Refs.toRefType(parent.annotationType)
+        };
+
+        return this.newInstanceFromParentRef(parentRef, type, fields)
+
+    }
+
+    private static newInstanceFromParentRef(parent: IRef,
+                                            type: FlashcardType,
+                                            fields: FrontAndBackFields | ClozeFields): Flashcard | undefined {
+
+        const ref = Refs.create(parent.value, parent.type);
 
         if (type === FlashcardType.BASIC_FRONT_BACK) {
 

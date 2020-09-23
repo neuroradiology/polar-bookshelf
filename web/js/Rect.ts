@@ -1,11 +1,13 @@
 import {Dimensions} from './util/Dimensions';
 import {Line} from './util/Line';
-import {Preconditions} from './Preconditions';
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import {IRect} from 'polar-shared/src/util/rects/IRect';
+import {ILTRect} from "polar-shared/src/util/rects/ILTRect";
 
 /**
  * Basic DOM style rect without a hard requirement to use a DOMRect.
  */
-export class Rect {
+export class Rect implements IRect, ILTRect {
 
     // TODO: some rects have x,y as well as left,top ... should we add them here
     // to be complete and closer to a DOMRect?
@@ -47,18 +49,14 @@ export class Rect {
 
     }
 
-    /**
-     *
-     * @return {Dimensions}
-     */
-    get dimensions(): Dimensions {
+    public get dimensions(): Dimensions {
         return new Dimensions({
             width: this.width,
             height: this.height
         });
     }
 
-    get area(): number {
+    public get area(): number {
         return this.width * this.height;
     }
 
@@ -98,3 +96,4 @@ export class Rect {
 }
 
 export type Axis = 'x' | 'y';
+

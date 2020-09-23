@@ -1,4 +1,4 @@
-import {PagemarkMode} from './PagemarkMode';
+import {PagemarkMode} from 'polar-shared/src/metadata/PagemarkMode';
 import {assertJSON} from '../test/Assertions';
 import {PagemarkModes} from './PagemarkModes';
 
@@ -28,9 +28,9 @@ describe('PagemarkMode', function() {
                 "key": "table-of-contents"
             },
             {
-                "name": "APPENDEX",
-                "title": "appendex",
-                "key": "appendex"
+                "name": "APPENDIX",
+                "title": "appendix",
+                "key": "appendix"
             },
             {
                 "name": "REFERENCES",

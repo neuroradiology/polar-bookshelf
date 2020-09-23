@@ -2,7 +2,7 @@ import {ipcRenderer} from "electron";
 import {ProgressMessage} from "./ProgressMessage";
 import {ProgressMessages} from "./ProgressMessages";
 import {DeterminateProgressBar} from './DeterminateProgressBar';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {TypedMessage} from '../../util/TypedMessage';
 
 const log = Logger.create();
@@ -13,8 +13,7 @@ export class ProgressService {
 
         if (ipcRenderer) {
 
-            ipcRenderer.on(ProgressMessages.CHANNEL, (event: Electron.EventEmitter,
-                                                      progressMessage: ProgressMessage) => {
+            ipcRenderer.on(ProgressMessages.CHANNEL, (event, progressMessage: ProgressMessage) => {
 
                 this.onProgressMessage(progressMessage);
 
@@ -26,14 +25,10 @@ export class ProgressService {
         // itself about progress.
         window.addEventListener("message", event => this.onMessageReceived(event), false);
 
-        log.info("started");
-
     }
 
 
     private onMessageReceived(event: any) {
-
-        log.info("Received message: ", event);
 
         switch (event.data.type) {
 

@@ -1,5 +1,6 @@
-import {Logger} from '../logger/Logger';
-import {Latch} from './Latch';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {NULL_FUNCTION} from 'polar-shared/src/util/Functions';
+import {Latch} from "polar-shared/src/util/Latch";
 
 const log = Logger.create();
 
@@ -41,6 +42,20 @@ export class Promises {
     }
 
     /**
+     * Execute all the promises in this array in the background and use all the
+     * error handler on all of them.
+     */
+    public static executeInBackground(promises: ReadonlyArray<Promise<any>>,
+                                      errorHandler: (err: Error) => void) {
+
+        for (const promise of promises) {
+            promise.then(NULL_FUNCTION)
+                   .catch(err => errorHandler(err));
+        }
+
+    }
+
+    /**
      * A promise based timeout.  This just returns a promise which returns
      * once the timeout has expired. You can then call .then() or just await
      * the timeout.
@@ -58,6 +73,7 @@ export class Promises {
         });
 
     }
+
 
     /**
      * Return a promise that returns a literal value.
@@ -103,7 +119,30 @@ export class Promises {
      * @param func
      */
     public static executeLogged(func: () => Promise<any>) {
-        func().catch(err => log.error("Caught error: ", err))
+        func().catch(err => log.error("Caught error: ", err));
+    }
+
+    public static requestAnimationFrame(callback: () => void = NULL_FUNCTION) {
+        return new Promise(resolve => {
+            callback();
+            window.requestAnimationFrame(() => resolve());
+        });
+    }
+
+
+    public static toDelayed<T>(delegate: () => Promise<T>) {
+
+        return () => {
+            return new Promise((resolve, reject) => {
+                try {
+                    resolve(delegate());
+                } catch(err) {
+                    reject(err);
+                }
+            });
+
+        };
+
     }
 
 }

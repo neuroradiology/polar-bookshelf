@@ -1,6 +1,6 @@
-import {Optional} from './ts/Optional';
-import {DurationStr, TimeDurations} from './TimeDurations';
-import {DurationMS} from './TimeDurations';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {DurationStr, TimeDurations} from 'polar-shared/src/util/TimeDurations';
+import {DurationMS} from 'polar-shared/src/util/TimeDurations';
 
 /**
  * @Deprecated use the new IPrefs systems
@@ -123,12 +123,72 @@ export class LocalPrefs {
     }
 
     public static get(key: string): Optional<string> {
+
+        const storage = StorageBackends.get();
+
+        return storage.get(key);
+    }
+
+    public static set(key: string, value: string | number): void {
+
+        if (typeof value === 'number') {
+            value = value.toString();
+        }
+
+        const storage = StorageBackends.get();
+
+        storage.set(key, value);
+
+    }
+
+}
+
+export class StorageBackends {
+
+    public static delegate?: IStorageBackend;
+
+    public static get() {
+
+        if (this.delegate) {
+            return this.delegate;
+        }
+
+        return new LocalStorageBackend();
+
+    }
+
+}
+
+interface IStorageBackend {
+
+    get(key: string): Optional<string>;
+
+    set(key: string, value: string): void;
+
+}
+
+class LocalStorageBackend {
+
+    public get(key: string): Optional<string> {
         return Optional.of(window.localStorage.getItem(key));
     }
 
-    public static set(key: string, value: string): void {
+    public set(key: string, value: string): void {
         window.localStorage.setItem(key, value);
     }
 
 }
 
+export class MockStorageBackend {
+
+    private backing: {[key: string]: string} = {};
+
+    public get(key: string): Optional<string> {
+        return Optional.of(this.backing[key]);
+    }
+
+    public set(key: string, value: string): void {
+        this.backing[key] = value;
+    }
+
+}

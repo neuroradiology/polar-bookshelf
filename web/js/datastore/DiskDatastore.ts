@@ -1,38 +1,58 @@
-import {AbstractDatastore, Datastore, DatastoreInfo, DatastoreOverview, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileRef, InitResult, PrefsProvider, SnapshotResult} from './Datastore';
-import {WriteFileOpts} from './Datastore';
-import {Preconditions} from '../Preconditions';
-import {Logger} from '../logger/Logger';
+import {
+    AbstractDatastore,
+    AbstractPrefsProvider,
+    BinaryFileData,
+    Datastore,
+    DatastoreCapabilities,
+    DatastoreInfo,
+    DatastoreOverview,
+    DefaultWriteFileOpts,
+    DeleteResult,
+    DocMetaSnapshotEventListener,
+    ErrorListener,
+    InitResult,
+    PrefsProvider,
+    SnapshotResult,
+    WriteFileOpts,
+    WriteOpts
+} from './Datastore';
+import {isPresent, Preconditions} from 'polar-shared/src/Preconditions';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
-import {FileDeleted, FileHandle, Files} from '../util/Files';
-import {FilePaths} from '../util/FilePaths';
+import {FileDeleted, FileHandle, Files} from 'polar-shared/src/util/Files';
+import {FilePaths} from 'polar-shared/src/util/FilePaths';
 import {Directories} from './Directories';
 
 import fs from 'fs';
 import os from 'os';
 
-import {Backend} from './Backend';
-import {DocFileMeta} from './DocFileMeta';
-import {Optional} from '../util/ts/Optional';
-import {DocInfo} from '../metadata/DocInfo';
-import {Platform, Platforms} from "../util/Platforms";
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {Platform, Platforms} from "polar-shared/src/util/Platforms";
 import {DatastoreFiles} from './DatastoreFiles';
 import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
 import {Datastores} from './Datastores';
-import {NULL_FUNCTION} from '../util/Functions';
-import {Strings} from '../util/Strings';
-import {ISODateTimeStrings} from '../metadata/ISODateTimeStrings';
-import {DocMeta} from '../metadata/DocMeta';
-import {Stopwatches} from '../util/Stopwatches';
-import {Prefs, StringToStringDict} from '../util/prefs/Prefs';
-import {DefaultWriteFileOpts} from './Datastore';
-import {DatastoreCapabilities} from './Datastore';
-import {NetworkLayer} from './Datastore';
-import {GetFileOpts} from './Datastore';
-import {isPresent} from '../Preconditions';
-import {BinaryFileData} from './Datastore';
-import {WriteOpts} from './Datastore';
+import {NULL_FUNCTION} from 'polar-shared/src/util/Functions';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {Stopwatches} from 'polar-shared/src/util/Stopwatches';
+import {
+    DictionaryPrefs,
+    PersistentPrefs,
+    StringToPrefDict
+} from '../util/prefs/Prefs';
+import {DatastoreMutations} from './DatastoreMutations';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {Strings} from "polar-shared/src/util/Strings";
+import {Mutexes} from "polar-shared/src/util/Mutexes";
+import {DocMetas} from "../metadata/DocMetas";
+import {GetFileOpts, NetworkLayer} from "polar-shared/src/datastore/IDatastore";
 
 const log = Logger.create();
+
+const writeMutex = Mutexes.create();
 
 export class DiskDatastore extends AbstractDatastore implements Datastore {
 
@@ -50,7 +70,8 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
 
     public readonly directories: Directories;
 
-    private readonly diskPrefsStore: DiskPrefsStore;
+    private readonly diskPersistentPrefsBacking: DiskPersistentPrefsBacking;
+    private prefs: DiskPersistentPrefsProviderImpl | undefined;
 
     constructor() {
 
@@ -66,7 +87,7 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
         this.stashDir = this.directories.stashDir;
         this.filesDir = this.directories.filesDir;
         this.logsDir = this.directories.logsDir;
-        this.diskPrefsStore = new DiskPrefsStore(this.directories);
+        this.diskPersistentPrefsBacking = new DiskPersistentPrefsBacking(this.directories);
 
     }
 
@@ -102,7 +123,7 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
                 if (data) {
 
                     try {
-                        const docMeta: DocMeta = JSON.parse(data);
+                        const docMeta: IDocMeta = JSON.parse(data);
 
                         if (docMeta && docMeta.docInfo && docMeta.docInfo.added) {
                             addedValues.push(docMeta.docInfo.added);
@@ -131,9 +152,19 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
         };
 
         await doInitInfo();
-        await this.diskPrefsStore.init();
+
+        await this.initPrefs();
 
         return diskInitResult;
+    }
+
+    private async initPrefs() {
+
+        if (! this.prefs) {
+            await this.diskPersistentPrefsBacking.init();
+            this.prefs = new DiskPersistentPrefsProviderImpl(this.diskPersistentPrefsBacking);
+        }
+
     }
 
     public async stop() {
@@ -166,29 +197,39 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
                         datastoreMutation: DatastoreMutation<boolean> = new DefaultDatastoreMutation()):
         Promise<Readonly<DiskDeleteResult>> {
 
-        const docDir = FilePaths.join(this.dataDir, docMetaFileRef.fingerprint);
-        const statePath = FilePaths.join(docDir, 'state.json');
+        const deleteDelegate = async () => {
 
-        let deleteFilePromise: Promise<void> = Promise.resolve();
+            const docDir = FilePaths.join(this.dataDir, docMetaFileRef.fingerprint);
+            const statePath = FilePaths.join(docDir, 'state.json');
 
-        if (docMetaFileRef.docFile && docMetaFileRef.docFile.name) {
-            deleteFilePromise = this.deleteFile(Backend.STASH, docMetaFileRef.docFile);
-        }
+            let deleteFilePromise: Promise<void> = Promise.resolve();
 
-        log.info(`Deleting statePath ${statePath} and file docMetaFileRef.docFile`);
+            if (docMetaFileRef.docFile && docMetaFileRef.docFile.name) {
+                deleteFilePromise = this.deleteFile(Backend.STASH, docMetaFileRef.docFile);
+            }
 
-        // TODO: don't delete JUST the state file but also the parent dir if it
-        // is empty.
+            log.info(`Deleting statePath ${statePath} and file: `, docMetaFileRef.docFile);
 
-        const deleteStatePathPromise = Files.deleteAsync(statePath);
+            // TODO: don't delete JUST the state file but also the parent dir if it
+            // is empty.
 
-        await Promise.all([deleteStatePathPromise, deleteFilePromise]);
+            const deleteStatePathPromise = Files.deleteAsync(statePath);
 
-        await deleteFilePromise;
+            log.debug("Waiting for state delete...");
+            const docMetaFile = await deleteStatePathPromise;
+            log.debug("Waiting for state delete...done");
 
-        return {
-            docMetaFile: await deleteStatePathPromise,
+            log.debug("Waiting for file delete...");
+            await deleteFilePromise;
+            log.debug("Waiting for file delete...done");
+
+            return {
+                docMetaFile
+            };
+
         };
+
+        return await DatastoreMutations.handle(async () => deleteDelegate(), datastoreMutation, () => true);
 
     }
 
@@ -245,7 +286,11 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
         if (! isPresent(data)) {
 
             if (opts.updateMeta) {
-                return (await this.getFile(backend, ref)).get();
+
+                // this is a metadata update and is not valid for the disk data
+                // store so we have no work to do.
+                return this.getFile(backend, ref);
+
             } else {
                 // when the caller specifies null they mean that there's a
                 // metadata update which needs to be applied.
@@ -263,6 +308,7 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
         // this would create the parent dir for the file when it does not exist.
         await Files.createDirAsync(fileReference.dir);
 
+        // TODO maybe make this accept a function that creates a readable stream.
         type DiskBinaryFileData = FileHandle | Buffer | string | NodeJS.ReadableStream;
 
         const diskData = <DiskBinaryFileData> data;
@@ -275,7 +321,7 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    public async getFile(backend: Backend, ref: FileRef, opts: GetFileOpts = {}): Promise<Optional<DocFileMeta>> {
+    public getFile(backend: Backend, ref: FileRef, opts: GetFileOpts = {}): DocFileMeta {
 
         Datastores.assertNetworkLayer(this, opts.networkLayer);
 
@@ -283,12 +329,7 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
 
         const fileReference = this.createFileReference(backend, ref);
 
-        if (await Files.existsAsync(fileReference.path)) {
-            const datastoreFile = await this.createDatastoreFile(backend, ref, fileReference);
-            return Optional.of(datastoreFile);
-        } else {
-            return Optional.empty();
-        }
+        return this.createDatastoreFile(backend, ref, fileReference);
 
     }
 
@@ -314,76 +355,89 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
      */
     public async write(fingerprint: string,
                        data: string,
-                       docInfo: DocInfo,
+                       docInfo: IDocInfo,
                        opts: WriteOpts = {}) {
-
-        await this.handleWriteFile(opts);
 
         const datastoreMutation = opts.datastoreMutation || new DefaultDatastoreMutation();
 
-        Preconditions.assertPresent(data, "data");
-        Preconditions.assertTypeOf(data, "string", "data", () => log.error("Failed with data: ", data));
+        const writeDelegate = async () => {
 
-        if (data.length === 0) {
-            throw new Error("Invalid data");
-        }
+            await this.handleWriteFile(opts);
 
-        if (data[0] !== '{') {
-            throw new Error("Not JSON");
-        }
+            Preconditions.assertPresent(data, "data");
+            Preconditions.assertTypeOf(data, "string", "data", () => log.error("Failed with data: ", data));
 
-        log.info("Performing sync of content into disk datastore");
+            if (data.length === 0) {
+                throw new Error("Invalid data");
+            }
 
-        const docDir = FilePaths.join(this.dataDir, fingerprint);
+            if (data[0] !== '{') {
+                throw new Error("Not JSON");
+            }
 
-        await Files.createDirAsync(docDir);
+            log.info("Performing sync of content into disk datastore");
 
-        log.debug("Calling stat on docDir: " + docDir);
-        const stat = await Files.statAsync(docDir);
+            const docDir = FilePaths.join(this.dataDir, fingerprint);
 
-        if (! stat.isDirectory()) {
-            throw new Error("Path is not a directory: " + docDir);
-        }
+            await Files.createDirAsync(docDir);
 
-        const statePath = FilePaths.join(docDir, "state.json");
+            log.debug("Calling stat on docDir: " + docDir);
+            const stat = await Files.statAsync(docDir);
 
-        log.info(`Writing data to state file: ${statePath}`);
+            if (! stat.isDirectory()) {
+                throw new Error("Path is not a directory: " + docDir);
+            }
 
-        // TODO: don't write directly to state.json... instead write to
-        // state.json.new, then delete state.json, then move state.json.new to
-        // state.json..  This way we can create backups using hard links easily.
+            const statePath = FilePaths.join(docDir, "state.json");
 
-        const result = Files.writeFileAsync(statePath, data, {encoding: 'utf8', atomic: true});
+            log.info(`Writing data to state file: ${statePath}`);
 
-        this.datastoreMutations.handle(result, datastoreMutation, () => true);
+            // TODO: don't write directly to state.json... instead write to
+            // state.json.new, then delete state.json, then move state.json.new to
+            // state.json..  This way we can create backups using hard links easily.
 
-        return result;
+            await Files.writeFileAsync(statePath, data, {encoding: 'utf8', atomic: true});
+
+        };
+
+        // write this using a write mutex so that on Windows we don't have any race
+        // conditions writing files.
+        await writeMutex.execute(async () => {
+            await DatastoreMutations.handle(async () => writeDelegate(), datastoreMutation, () => true);
+        });
 
     }
 
-    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
 
         if ( ! await Files.existsAsync(this.dataDir)) {
             // no data dir but this should rarely happen.
             return [];
         }
 
-        const entries = await Files.readdirAsync(this.dataDir);
+        const fingerprints = await Files.readdirAsync(this.dataDir);
 
         const result: DocMetaRef[] = [];
 
-        for ( const entry of entries) {
+        for ( const fingerprint of fingerprints) {
 
-            const docMetaDir = FilePaths.join(this.dataDir, entry);
+            const docMetaDir = FilePaths.join(this.dataDir, fingerprint);
             const docMetaDirStat = await Files.statAsync(docMetaDir);
 
             if (docMetaDirStat.isDirectory()) {
 
-                const stateFile = FilePaths.join(this.dataDir, entry, 'state.json');
+                const stateFile = FilePaths.join(this.dataDir, fingerprint, 'state.json');
 
                 const exists = await Files.existsAsync(stateFile);
+
                 if (exists) {
-                    result.push({fingerprint: entry});
+                    result.push({
+                        fingerprint,
+                        docMetaProvider: async () => {
+                            const data = await this.getDocMeta(fingerprint);
+                            return DocMetas.deserialize(data!, fingerprint);
+                        }
+                    });
                 }
 
             }
@@ -501,19 +555,17 @@ export class DiskDatastore extends AbstractDatastore implements Datastore {
 
     public getPrefs(): PrefsProvider {
 
-        const diskPrefsStore = this.diskPrefsStore;
-
-        return {
-            get() {
-                return diskPrefsStore.getPrefs();
-            }
-        };
+        if (this.prefs) {
+            return this.prefs;
+        } else {
+            throw new Error("No prefs. Not initialized yet.");
+        }
 
     }
 
-    private async createDatastoreFile(backend: Backend,
-                                      ref: FileRef,
-                                      fileReference: DiskFileReference): Promise<DocFileMeta> {
+    private createDatastoreFile(backend: Backend,
+                                ref: FileRef,
+                                fileReference: DiskFileReference): DocFileMeta {
 
         const fileURL = FilePaths.toURL(fileReference.path);
         const url = new URL(fileURL);
@@ -755,9 +807,9 @@ export interface InitOptions {
 
 }
 
-export class DiskPrefsStore {
+export class DiskPersistentPrefsBacking {
 
-    private prefs: DiskPrefs;
+    private prefs: DiskPersistentPrefs;
 
     private readonly directories: Directories;
 
@@ -765,7 +817,7 @@ export class DiskPrefsStore {
 
     constructor(directories: Directories) {
         this.directories = directories;
-        this.prefs = new DiskPrefs(this);
+        this.prefs = new DiskPersistentPrefs(this);
         this.path = FilePaths.create(this.directories.configDir, "prefs.json");
     }
 
@@ -774,62 +826,52 @@ export class DiskPrefsStore {
         if (await Files.existsAsync(this.path)) {
             log.info("Loaded prefs from: " + this.path);
             const data = await Files.readFileAsync(this.path);
-            const prefs = JSON.parse(data.toString("UTF-8"));
-            this.prefs.update(prefs);
+            const prefs: StringToPrefDict = JSON.parse(data.toString("UTF-8"));
+
+            this.prefs = new DiskPersistentPrefs(this, prefs);
         }
 
     }
 
-    public getPrefs() {
+    public async commit(): Promise<void> {
+        const data = JSON.stringify(this.prefs.toPrefDict(), null, "  ");
+        await Files.writeFileAsync(this.path, data, {atomic: true});
+    }
+
+    public get() {
         return this.prefs;
     }
 
-    public async commit(): Promise<void> {
-
-        const data = JSON.stringify(this.prefs.toDict(), null, "  ");
-        await Files.writeFileAsync(this.path, data, {atomic: true});
-
-    }
 
 }
 
 /**
  * Prefs object just backed by a local dictionary.
  */
-export class DiskPrefs extends Prefs {
+export class DiskPersistentPrefs extends DictionaryPrefs implements PersistentPrefs {
 
-    private readonly delegate: StringToStringDict = {};
+    private readonly diskPrefsStore: DiskPersistentPrefsBacking;
 
-    private readonly diskPrefsStore: DiskPrefsStore;
-
-    constructor(diskPrefsStore: DiskPrefsStore) {
-        super();
+    constructor(diskPrefsStore: DiskPersistentPrefsBacking,
+                delegate: StringToPrefDict = {}) {
+        super(delegate);
         this.diskPrefsStore = diskPrefsStore;
     }
 
-    public get(key: string): Optional<string> {
-        return Optional.of(this.delegate[key]);
+    public async commit(): Promise<void> {
+        return await this.diskPrefsStore.commit();
     }
 
-    public set(key: string, value: string): void {
-        this.delegate[key] = value;
+}
 
-        this.diskPrefsStore.commit()
-            .catch(err => log.error("Unable to write prefs: ", err));
+class DiskPersistentPrefsProviderImpl extends AbstractPrefsProvider {
 
+    constructor(private readonly backing: DiskPersistentPrefsBacking) {
+        super();
     }
 
-    public update(dict: StringToStringDict) {
-
-        for (const key of Object.keys(dict)) {
-            const value = dict[key];
-            this.delegate[key] = value;
-        }
-
-    }
-
-    public toDict(): StringToStringDict {
-        return {...this.delegate};
+    public get(): PersistentPrefs {
+        return this.createInterceptedPersistentPrefs(this.backing.get())!;
     }
 
 }

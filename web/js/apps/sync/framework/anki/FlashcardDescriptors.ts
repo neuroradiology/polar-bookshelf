@@ -1,10 +1,11 @@
 import {DocMetaSupplierCollection} from '../../../../metadata/DocMetaSupplierCollection';
 import {FlashcardDescriptor} from './FlashcardDescriptor';
 import {Flashcard} from '../../../../metadata/Flashcard';
-import {Dictionaries} from '../../../../util/Dictionaries';
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
 import * as _ from 'lodash';
-import {FlashcardType} from '../../../../metadata/FlashcardType';
-import {Logger} from '../../../../logger/Logger';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {IFlashcard} from "polar-shared/src/metadata/IFlashcard";
 
 const log = Logger.create();
 
@@ -24,7 +25,7 @@ export class FlashcardDescriptors {
 
                     // collect all flashcards for the current page.
 
-                    const flashcards: Flashcard[] = [];
+                    const flashcards: IFlashcard[] = [];
 
                     flashcards.push(... Dictionaries.values(pageMeta.flashcards));
 

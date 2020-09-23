@@ -1,11 +1,8 @@
 import {Point} from '../../Point';
-import {MouseDirection} from './Popup';
-import {Simulate} from 'react-dom/test-utils';
-import mouseMove = Simulate.mouseMove;
-import {Logger} from '../../logger/Logger';
-import {isPresent} from '../../Preconditions';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {Selections} from '../../highlights/text/selection/Selections';
 import {Ranges} from '../../highlights/text/selection/Ranges';
+import {MouseDirection} from "./MouseDirection";
 
 const log = Logger.create();
 
@@ -43,15 +40,7 @@ export class ActiveSelections {
 
         };
 
-        target.addEventListener('mousedown', (event: MouseEvent) => {
-
-            if (!activeSelection) {
-                originPoint = this.eventToPoint(event);
-            }
-
-        });
-
-        target.addEventListener('mouseup', (event: MouseEvent) => {
+        const onMouseUp = (event: MouseEvent | TouchEvent, element: HTMLElement | undefined) => {
 
             const handleMouseEvent = () => {
 
@@ -60,13 +49,12 @@ export class ActiveSelections {
 
                 try {
 
-                    const view: Window = event.view;
+                    const view: Window = event.view || window;
                     const selection = view.getSelection()!;
 
                     hasActiveTextSelection = this.hasActiveTextSelection(selection);
 
                     const point = this.eventToPoint(event);
-                    const element = this.targetElementForEvent(event);
 
                     if (! element) {
                         log.warn("No target element: ", event.target);
@@ -109,7 +97,77 @@ export class ActiveSelections {
 
             this.withTimeout(() => handleMouseEvent());
 
+        };
+
+        type EventType = 'mouse' | 'touch';
+
+        const onMouseDown = (event: MouseEvent | TouchEvent, type: EventType) => {
+
+            if (event.ctrlKey || event.metaKey) {
+                // only work with default / basic mouse selection because otherwise
+                // we could trigger on context menu
+                return;
+            }
+
+            if (!activeSelection) {
+                originPoint = this.eventToPoint(event);
+            }
+
+            const element = this.targetElementForEvent(event);
+
+            const view = event.view || window;
+
+            switch (type) {
+
+                case "mouse":
+
+                    view.addEventListener('mouseup', event => {
+                        // this code properly handles the mouse leaving the window
+                        // during mouse up and then leaving wonky event handlers.
+                        onMouseUp(event, element);
+                    }, {once: true});
+
+                    break;
+
+                case "touch":
+
+                    view.addEventListener('touchend', event => {
+                        // this code properly handles the mouse leaving the window
+                        // during mouse up and then leaving wonky event handlers.
+                        onMouseUp(event, element);
+                    }, {once: true});
+
+                    break;
+
+            }
+
+        };
+
+        const onKeyPress = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                handleDestroyedSelection();
+            }
+        }
+
+        target.addEventListener('mousedown', (event: MouseEvent) => {
+            onMouseDown(event, 'mouse');
         });
+
+        target.addEventListener('touchstart', (event: TouchEvent) => {
+            onMouseDown(event, 'touch');
+        });
+
+        // TODO: this isn't being handled properly and the event doesn't seem
+        // to be fired.
+        //
+        // TODO: this wouldn't really work I think because we also need to handle
+        // Escape in the main app window so I need to figure out how to handle
+        // solve this problem. Maybe with Escape it's sent to both the current
+        // iframe and root window (host)
+
+        // window.addEventListener('keypress', (event) => {
+        //     onKeyPress(event);
+        // })
 
         // TODO: I played with closing the annotation bar on right click but
         // it was difficult to setup. It had the following problems:
@@ -152,21 +210,15 @@ export class ActiveSelections {
         setTimeout(() => callback(), 1);
     }
 
-    private static targetElementForEvent(event: MouseEvent): HTMLElement | undefined {
+    private static targetElementForEvent(event: MouseEvent | TouchEvent): HTMLElement {
 
-        if (event.target instanceof Node) {
+        const anyTarget = event.target as any;
 
-            if (event.target instanceof HTMLElement) {
-                return event.target;
-            } else {
-                return event.target.parentElement!;
-            }
-
+        if (anyTarget.nodeType === Node.ELEMENT_NODE) {
+            return event.target as HTMLElement;
         } else {
-            log.warn("Event target is not node: ", event.target);
+            return (event.target! as any).parentElement! as HTMLElement;
         }
-
-        return undefined;
 
     }
 
@@ -184,12 +236,32 @@ export class ActiveSelections {
 
     }
 
-    private static eventToPoint(event: MouseEvent) {
+    private static eventToPoint(event: MouseEvent | TouchEvent) {
 
-        return {
-            x: event.offsetX,
-            y: event.offsetY
-        };
+        if ('offsetX' in event) {
+
+            return {
+                x: event.offsetX,
+                y: event.offsetY
+            };
+
+        }
+
+        if (! event.target) {
+            throw new Error("No target");
+        }
+
+        if (event.changedTouches.length === 0) {
+            log.warn("No touches found in event: " , event);
+            throw new Error("No touches");
+        }
+
+        const rect = (<HTMLElement> event.target).getBoundingClientRect();
+
+        const x = event.changedTouches[0].pageX - rect.left;
+        const y = event.changedTouches[0].pageY - rect.top;
+
+        return {x, y};
 
     }
 

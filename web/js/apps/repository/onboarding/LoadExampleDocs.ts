@@ -1,26 +1,30 @@
 import {AppPath} from '../../../electron/app_path/AppPath';
-import {FilePaths} from '../../../util/FilePaths';
-import {ImportedFile, PDFImporter} from '../importers/PDFImporter';
+import {FilePaths} from 'polar-shared/src/util/FilePaths';
+import {ImportedFile, DocImporter} from '../importers/DocImporter';
 import {PersistenceLayer} from '../../../datastore/PersistenceLayer';
-import {Providers} from '../../../util/Providers';
 import {Pagemarks} from '../../../metadata/Pagemarks';
-import {Logger} from '../../../logger/Logger';
-import {Tag} from '../../../tags/Tag';
-import {ISODateTimeString, ISODateTimeStrings} from '../../../metadata/ISODateTimeStrings';
-import {Optional} from '../../../util/ts/Optional';
-import {DocMeta} from '../../../metadata/DocMeta';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {
+    ISODateTimeString,
+    ISODateTimeStrings
+} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {DocMetas} from '../../../metadata/DocMetas';
-import {Backend} from '../../../datastore/Backend';
-import {AppRuntime} from '../../../AppRuntime';
-import {FileRef} from '../../../datastore/Datastore';
-import {BackendFileRef} from '../../../datastore/Datastore';
+import {Backend} from 'polar-shared/src/datastore/Backend';
 import {LoadExampleDocsMeta} from './LoadExampleDocsMeta';
-import {Hashcode} from '../../../metadata/Hashcode';
-import {HashAlgorithm} from '../../../metadata/Hashcode';
-import {HashEncoding} from '../../../metadata/Hashcode';
-import {DocInfo} from '../../../metadata/DocInfo';
-import {Datastores} from '../../../datastore/Datastores';
-import {PDFMeta} from '../importers/PDFMetadata';
+import {
+    HashAlgorithm,
+    Hashcode,
+    HashEncoding
+} from 'polar-shared/src/metadata/Hashcode';
+import {BackendFileRefs} from '../../../datastore/BackendFileRefs';
+import {Tag} from 'polar-shared/src/tags/Tags';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {BackendFileRef} from "polar-shared/src/datastore/BackendFileRef";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {IParsedDocMeta} from "polar-shared/src/util/IParsedDocMeta";
+import {AppRuntime} from "polar-shared/src/util/AppRuntime";
 
 const log = Logger.create();
 
@@ -30,20 +34,11 @@ export class LoadExampleDocs {
 
     private readonly persistenceLayer: PersistenceLayer;
 
-    private readonly pdfImporter: PDFImporter;
-
     constructor(persistenceLayer: PersistenceLayer) {
         this.persistenceLayer = persistenceLayer;
-
-        this.pdfImporter
-            = new PDFImporter(
-                Providers.toInterface(
-                    Providers.of(
-                        this.persistenceLayer)));
-
     }
 
-    public async load(onLoaded: (docInfo: DocInfo) => void) {
+    public async load(onLoaded: (docInfo: IDocInfo) => void) {
 
         if (await this.hasDocs()) {
             // we're done as there already docs in the repo
@@ -64,6 +59,8 @@ export class LoadExampleDocs {
             this.doDoc7()
         ];
 
+        // TODO: this code isn't very clean and could be refactored using an
+        // async worker queue.
         for (const promise of promises) {
 
             promise
@@ -87,7 +84,7 @@ export class LoadExampleDocs {
         return await this.doDoc(FilePaths.join('docs', 'examples', 'pdf', 'dremel.pdf'), {
             fingerprint: "69cf32b9ffbb82056a3ac0eadea447de",
             title: "Dremel: Interactive Analysis of Web-Scale Datasets",
-            tags: this.createTags('google', 'dremel'),
+            tags: this.createTags('google', 'dremel', '/technology/google'),
             added: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-2d'),
             lastUpdated: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-8h'),
             pagemarkEnd: 1,
@@ -105,7 +102,7 @@ export class LoadExampleDocs {
         return await this.doDoc(FilePaths.join('docs', 'examples', 'pdf', 'datacenter-as-a-computer.pdf'), {
             fingerprint: "a81fe1c43148c3448e1a4133a5c8005e",
             title: "The Datacenter as a Computer",
-            tags: this.createTags('google', 'datacenters'),
+            tags: this.createTags('google', 'datacenters', '/technology/google'),
             added: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-2d'),
             lastUpdated: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-8h'),
             pagemarkEnd: 2,
@@ -123,7 +120,7 @@ export class LoadExampleDocs {
         return await this.doDoc(FilePaths.join('docs', 'examples', 'pdf', 'chubby.pdf'), {
             fingerprint: "c29bc1717788b1602a3cf4ed28ddfbcd",
             title: "The Chubby lock service for loosely-coupled distributed systems",
-            tags: this.createTags('google', 'chubby'),
+            tags: this.createTags('google', 'chubby', '/technology/google'),
             added: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-1d'),
             lastUpdated: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-3h'),
             pagemarkEnd: 2,
@@ -141,7 +138,7 @@ export class LoadExampleDocs {
         return await this.doDoc(FilePaths.join('docs', 'examples', 'pdf', 'borg.pdf'), {
             fingerprint: "3417be32534083dea66d733604d36d75",
             title: "Large-scale cluster management at Google with Borg",
-            tags: this.createTags('google', 'borg', 'docker'),
+            tags: this.createTags('google', 'borg', 'docker', '/technology/docker'),
             added: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-3d'),
             lastUpdated: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-8h'),
             pagemarkEnd: 2,
@@ -160,7 +157,7 @@ export class LoadExampleDocs {
         return await this.doDoc(FilePaths.join('docs', 'examples', 'pdf', 'availability.pdf'), {
             fingerprint: "39b730b6e9d281b0eae91b2c2c29b842",
             title: "Availability in Globally Distributed Storage Systems",
-            tags: this.createTags('google', 'availability'),
+            tags: this.createTags('google', 'availability', '/technology/google'),
             added: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-2d'),
             lastUpdated: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-12h'),
             pagemarkEnd: 7,
@@ -197,7 +194,7 @@ export class LoadExampleDocs {
         return await this.doDoc(FilePaths.join('docs', 'examples', 'pdf', 'pub47492.pdf'), {
             fingerprint: "6ea16525b2e4eab7b946f68419a345a6",
             title: "Efficient Live Expansion for Clos Data Center Networks",
-            tags: this.createTags('google', 'datacenters'),
+            tags: this.createTags('google', 'datacenters', '/technology/networks', '/technology/datacenters'),
             added: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-2h'),
             lastUpdated: ISODateTimeStrings.adjust(ISODateTimeStrings.create(), '-1h'),
             pagemarkEnd: 17,
@@ -278,13 +275,13 @@ export class LoadExampleDocs {
 
     }
 
-    private async doDoc(relativePath: string, opts: DocOpts): Promise<DocMeta | undefined> {
+    private async doDoc(relativePath: string, opts: DocOpts): Promise<IDocMeta| undefined> {
 
         const doImport = async (): Promise<ImportedDoc> => {
 
             if (AppRuntime.isElectron()) {
 
-                const pdfMeta: PDFMeta = {
+                const pdfMeta: IParsedDocMeta = {
                     fingerprint: opts.fingerprint,
                     nrPages: opts.nrPages,
                     props: {}
@@ -293,11 +290,11 @@ export class LoadExampleDocs {
                 const importedFile =
                     await this.doImport(relativePath, pdfMeta);
 
-                if (importedFile.isPresent()) {
+                if (importedFile) {
 
-                    const docInfo = importedFile.get().docInfo;
+                    const docInfo = importedFile.docInfo;
                     const docMeta = await this.persistenceLayer.getDocMeta(docInfo.fingerprint);
-                    const backendFileRef = importedFile.get().backendFileRef;
+                    const backendFileRef = importedFile.backendFileRef;
 
                     return {
                         docMeta: docMeta!,
@@ -327,7 +324,7 @@ export class LoadExampleDocs {
 
                 return {
                     docMeta,
-                    backendFileRef: Datastores.toBackendFileRef(docMeta)!
+                    backendFileRef: BackendFileRefs.toBackendFileRef(docMeta)!
                 };
 
             }
@@ -379,18 +376,20 @@ export class LoadExampleDocs {
 
     }
 
-    private async doImport(relativePath: string, pdfMeta: PDFMeta): Promise<Optional<ImportedFile>> {
+    private async doImport(relativePath: string, parsedDocMeta: IParsedDocMeta): Promise<ImportedFile> {
 
         const appPath = AppPath.get();
 
         if (! appPath) {
-            return Optional.empty();
+            throw new Error("No appPath");
         }
 
         const path = FilePaths.join(appPath, relativePath);
         const basename = FilePaths.basename(relativePath);
 
-        return await this.pdfImporter.importFile(path, basename, {pdfMeta});
+        const persistenceLayerProvider = () => this.persistenceLayer;
+        // return await DocImporter.importFile(persistenceLayerProvider, path, basename, {parsedDocMeta});
+        return await DocImporter.importFile(persistenceLayerProvider, path, basename);
 
     }
 
@@ -432,7 +431,7 @@ interface DocOpts {
 
 interface ImportedDoc {
 
-    readonly docMeta: DocMeta;
+    readonly docMeta: IDocMeta;
     readonly backendFileRef: BackendFileRef;
 
 }

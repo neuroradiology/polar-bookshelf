@@ -1,10 +1,10 @@
-import {DocMeta} from "../../../web/js/metadata/DocMeta";
 import {RepoDocMeta} from './RepoDocMeta';
 import {RepoDocInfos} from './RepoDocInfos';
-import {RepoAnnotations} from './RepoAnnotations';
-import {Logger} from "../../../web/js/logger/Logger";
-import {RepoDocInfo} from './RepoDocInfo';
-import {isPresent} from '../../../web/js/Preconditions';
+import {RepoDocAnnotations} from './RepoDocAnnotations';
+import {Logger} from "polar-shared/src/logger/Logger";
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {PersistenceLayerProvider} from '../../../web/js/datastore/PersistenceLayer';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
 
 const log = Logger.create();
 
@@ -24,7 +24,9 @@ export class RepoDocMetas {
 
     }
 
-    public static convert(fingerprint: string, docMeta?: DocMeta): RepoDocMeta | undefined {
+    public static convert(persistenceLayerProvider: PersistenceLayerProvider,
+                          fingerprint: string,
+                          docMeta?: IDocMeta): RepoDocMeta | undefined {
 
         if (! docMeta) {
             log.warn("No docMeta for file: ", fingerprint);
@@ -36,10 +38,10 @@ export class RepoDocMetas {
             return undefined;
         }
 
-        const repoDocInfo = RepoDocInfos.convert(docMeta.docInfo);
-        const repoAnnotations = RepoAnnotations.convert(docMeta);
+        const repoDocInfo = RepoDocInfos.convert(docMeta);
+        const repoAnnotations = RepoDocAnnotations.convert(persistenceLayerProvider, docMeta);
 
-        return {repoDocInfo, repoAnnotations};
+        return {repoDocInfo, repoDocAnnotations: repoAnnotations};
 
     }
 

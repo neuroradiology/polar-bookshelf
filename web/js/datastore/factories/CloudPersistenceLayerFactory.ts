@@ -1,4 +1,4 @@
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {ListenablePersistenceLayer} from '../ListenablePersistenceLayer';
 import {DefaultPersistenceLayer} from '../DefaultPersistenceLayer';
 import {AdvertisingPersistenceLayer} from '../advertiser/AdvertisingPersistenceLayer';
@@ -16,6 +16,7 @@ export class CloudPersistenceLayerFactory {
         log.info("Using remote persistence layer and cloud aware data store");
 
         const local = HybridRemoteDatastores.create();
+
         const cloud = new TracedDatastore(new FirebaseDatastore(), 'traced-firebase');
 
         const datastore = new CloudAwareDatastore(local, cloud);

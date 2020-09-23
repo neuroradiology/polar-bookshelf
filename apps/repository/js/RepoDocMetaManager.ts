@@ -1,25 +1,39 @@
-import {ListenablePersistenceLayer} from '../../../web/js/datastore/ListenablePersistenceLayer';
-import {Logger} from '../../../web/js/logger/Logger';
-import {DocInfo, IDocInfo} from '../../../web/js/metadata/DocInfo';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {DocInfo} from '../../../web/js/metadata/DocInfo';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {RepoDocInfo} from './RepoDocInfo';
-import {Tag} from '../../../web/js/tags/Tag';
-import {Tags} from '../../../web/js/tags/Tags';
-import {Preconditions} from '../../../web/js/Preconditions';
-import {RepoDocInfoIndex} from './RepoDocInfoIndex';
-import {TagsDB} from './TagsDB';
-import {Optional} from '../../../web/js/util/ts/Optional';
+import {Tag, Tags} from 'polar-shared/src/tags/Tags';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 import {DocMetaFileRefs} from '../../../web/js/datastore/DocMetaRef';
 import {PersistenceLayer} from '../../../web/js/datastore/PersistenceLayer';
-import {IProvider} from '../../../web/js/util/Providers';
-import {DocMeta} from '../../../web/js/metadata/DocMeta';
-import {RepoAnnotation} from './RepoAnnotation';
+import {IProvider} from 'polar-shared/src/util/Providers';
 import {RepoDocMeta} from './RepoDocMeta';
-import {RelatedTags} from '../../../web/js/tags/related/RelatedTags';
+import {RelatedTagsManager} from '../../../web/js/tags/related/RelatedTagsManager';
+import {SetArrays} from 'polar-shared/src/util/SetArrays';
+import {DataObjectIndex} from './index/DataObjectIndex';
+import {RepoDocAnnotations} from "./RepoDocAnnotations";
+import {RepoDocInfos} from "./RepoDocInfos";
+import {IDocAnnotation} from "../../../web/js/annotation_sidebar/DocAnnotation";
+import {IAsyncTransaction} from "polar-shared/src/util/IAsyncTransaction";
+import { IDocMeta } from 'polar-shared/src/metadata/IDocMeta';
+import {DocViewerSnapshots} from "../../doc/src/DocViewerSnapshots";
 
 const log = Logger.create();
 
-export interface RepoAnnotationIndex {
-    [id: string]: RepoAnnotation;
+export class RepoDocAnnotationDataObjectIndex extends DataObjectIndex<IDocAnnotation> {
+
+    constructor() {
+        super((repoAnnotation?: IDocAnnotation) => RepoDocAnnotations.toTags(repoAnnotation) );
+    }
+
+}
+
+export class RepoDocInfoDataObjectIndex extends DataObjectIndex<RepoDocInfo> {
+
+    constructor() {
+        super((repoDocInfo?: RepoDocInfo) => RepoDocInfos.toTags(repoDocInfo) );
+    }
+
 }
 
 /**
@@ -28,37 +42,109 @@ export interface RepoAnnotationIndex {
  */
 export class RepoDocMetaManager {
 
-    public readonly repoDocInfoIndex: RepoDocInfoIndex = {};
+    public readonly repoDocInfoIndex: RepoDocInfoDataObjectIndex = new RepoDocInfoDataObjectIndex();
 
-    public readonly repoAnnotationIndex: RepoAnnotationIndex = {};
+    public readonly repoDocAnnotationIndex: RepoDocAnnotationDataObjectIndex = new RepoDocAnnotationDataObjectIndex();
 
-    public readonly tagsDB = new TagsDB();
-
-    public readonly relatedTags = new RelatedTags();
+    public readonly relatedTagsManager = new RelatedTagsManager();
 
     private readonly persistenceLayerProvider: IProvider<PersistenceLayer>;
 
     constructor(persistenceLayerProvider: IProvider<PersistenceLayer>) {
+        Preconditions.assertPresent(persistenceLayerProvider, 'persistenceLayerProvider');
         this.persistenceLayerProvider = persistenceLayerProvider;
-        this.init();
     }
 
-    public updateFromRepoDocMeta(fingerprint: string, repoDocMeta?: RepoDocMeta) {
+    public updateFromRepoDocMeta(fingerprint: string,
+                                 repoDocMeta: RepoDocMeta | undefined) {
 
         if (repoDocMeta) {
 
-            this.repoDocInfoIndex[fingerprint] = repoDocMeta.repoDocInfo;
-            this.updateTagsDB(repoDocMeta.repoDocInfo);
+            const isStaleUpdate = (): boolean => {
 
-            this.relatedTags.update(fingerprint, 'set', ...Object.values(repoDocMeta.repoDocInfo.tags || {})
-                                                                 .map(current => current.label));
+                const existing = this.repoDocInfoIndex.get(fingerprint);
 
-            for (const repoAnnotation of repoDocMeta.repoAnnotations) {
-                this.repoAnnotationIndex[repoAnnotation.id] = repoAnnotation;
+                if (DocViewerSnapshots.computeUpdateType(existing?.docInfo.uuid,
+                                                         repoDocMeta.repoDocInfo.docInfo.uuid) === 'stale') {
+                    return true;
+                }
+
+                if (DocViewerSnapshots.computeUpdateType(existing?.docMeta.docInfo.uuid,
+                                                         repoDocMeta.repoDocInfo.docMeta.docInfo.uuid) === 'stale') {
+                    return true;
+                }
+
+                return false;
+
             }
 
+            if (isStaleUpdate()) {
+                // console.log("Skipping stale update.");
+                return;
+            }
+
+            this.repoDocInfoIndex.put(repoDocMeta.repoDocInfo.fingerprint, repoDocMeta.repoDocInfo);
+
+            // TODO: right now there is only ONE RelatedTagsManager and it only
+            // works with documents not annotations (since tags for annotations
+            // was added later).
+            this.relatedTagsManager.update(fingerprint, 'set', Object.values(repoDocMeta.repoDocInfo.tags || {}));
+
+            const updateAnnotations = () => {
+
+                const deleteOrphaned = () => {
+
+                    const currentAnnotationsIDs = this.repoDocAnnotationIndex.values()
+                        .filter(current => current.fingerprint === repoDocMeta.repoDocInfo.fingerprint)
+                        .map(current => current.id);
+
+                    const newAnnotationIDs = repoDocMeta.repoDocAnnotations
+                        .map(current => current.id);
+
+                    const deleteIDs = SetArrays.difference(currentAnnotationsIDs, newAnnotationIDs);
+
+                    for (const deleteID of deleteIDs) {
+                        this.repoDocAnnotationIndex.delete(deleteID);
+                    }
+
+                };
+
+                const updateExisting = () => {
+
+                    for (const repoDocAnnotation of repoDocMeta.repoDocAnnotations) {
+                        this.repoDocAnnotationIndex.put(repoDocAnnotation.id, repoDocAnnotation);
+                    }
+
+                };
+
+                deleteOrphaned();
+                updateExisting();
+
+            };
+
+            updateAnnotations();
+
         } else {
-            delete this.repoDocInfoIndex[fingerprint];
+
+            const deleteOrphanedAnnotations = () => {
+
+                // now delete stale repo annotations.
+                for (const repoAnnotation of this.repoDocAnnotationIndex.values()) {
+
+                    if (repoAnnotation.fingerprint === fingerprint) {
+                        this.repoDocAnnotationIndex.delete(repoAnnotation.id);
+                    }
+                }
+
+            };
+
+            const deleteDoc = () => {
+                this.repoDocInfoIndex.delete(fingerprint);
+            };
+
+            deleteOrphanedAnnotations();
+            deleteDoc();
+
         }
 
     }
@@ -69,53 +155,27 @@ export class RepoDocMetaManager {
      */
     public updateFromRepoDocInfo(fingerprint: string, repoDocInfo?: RepoDocInfo) {
 
+        // TODO this is wrong and we're not updating related tags, etc
+
         if (repoDocInfo) {
-            this.repoDocInfoIndex[fingerprint] = repoDocInfo;
-            this.updateTagsDB(repoDocInfo);
+            this.repoDocInfoIndex.put(fingerprint, repoDocInfo);
         } else {
-            delete this.repoDocInfoIndex[fingerprint];
+            this.repoDocInfoIndex.delete(fingerprint);
         }
 
     }
 
-    private updateTagsDB(...repoDocInfos: RepoDocInfo[]) {
+    public async writeDocInfo(docInfo: IDocInfo, docMeta: IDocMeta) {
 
-        for (const repoDocInfo of repoDocInfos) {
-
-            // update the tags data.
-            Optional.of(repoDocInfo.docInfo.tags)
-                .map(tags => {
-                    this.tagsDB.register(...Object.values(tags));
-                });
-
-        }
-
-    }
-
-    /**
-     * Sync the docInfo to disk.
-     *
-     */
-    public async writeDocInfo(docInfo: IDocInfo) {
+        Preconditions.assertPresent(this.persistenceLayerProvider, 'persistenceLayerProvider');
 
         const persistenceLayer = this.persistenceLayerProvider.get();
 
-        if (await persistenceLayer.contains(docInfo.fingerprint)) {
+        docMeta.docInfo = new DocInfo(docInfo);
 
-            const docMeta = await persistenceLayer.getDocMeta(docInfo.fingerprint);
+        log.info("Writing out updated DocMeta");
 
-            if (docMeta === undefined) {
-                log.warn("Unable to find DocMeta for: ", docInfo.fingerprint);
-                return;
-            }
-
-            docMeta.docInfo = new DocInfo(docInfo);
-
-            log.info("Writing out updated DocMeta");
-
-            await persistenceLayer.writeDocMeta(docMeta);
-
-        }
+        await persistenceLayer.writeDocMeta(docMeta);
 
     }
 
@@ -133,25 +193,33 @@ export class RepoDocMetaManager {
 
         this.updateFromRepoDocInfo(repoDocInfo.fingerprint, repoDocInfo);
 
-        return this.writeDocInfo(repoDocInfo.docInfo);
+        return this.writeDocInfo(repoDocInfo.docInfo, repoDocInfo.docMeta);
 
     }
 
     /**
      * Update the RepoDocInfo object with the given tags.
      */
-    public async writeDocInfoTags(repoDocInfo: RepoDocInfo, tags: Tag[]) {
+    public writeDocInfoTags(repoDocInfo: RepoDocInfo, tags: ReadonlyArray<Tag>): IAsyncTransaction<void> {
 
-        Preconditions.assertPresent(repoDocInfo);
-        Preconditions.assertPresent(repoDocInfo.docInfo);
-        Preconditions.assertPresent(tags);
+        const prepare = () => {
 
-        repoDocInfo = {...repoDocInfo, tags: Tags.toMap(tags)};
-        repoDocInfo.docInfo.tags = Tags.toMap(tags);
+            Preconditions.assertPresent(repoDocInfo);
+            Preconditions.assertPresent(repoDocInfo.docInfo);
+            Preconditions.assertPresent(tags);
 
-        this.updateFromRepoDocInfo(repoDocInfo.fingerprint, repoDocInfo);
+            repoDocInfo = {...repoDocInfo, tags: Tags.toMap(tags)};
+            repoDocInfo.docInfo.tags = Tags.toMap(tags);
 
-        return this.writeDocInfo(repoDocInfo.docInfo);
+            this.updateFromRepoDocInfo(repoDocInfo.fingerprint, repoDocInfo);
+
+        }
+
+        const commit = () => {
+            return this.writeDocInfo(repoDocInfo.docInfo, repoDocInfo.docMeta);
+        }
+
+        return {prepare, commit};
 
     }
 
@@ -164,18 +232,8 @@ export class RepoDocMetaManager {
         // delete it from the repo now.
         const docMetaFileRef = DocMetaFileRefs.createFromDocInfo(repoDocInfo.docInfo);
 
-        return await persistenceLayer.delete(docMetaFileRef);
+        await persistenceLayer.delete(docMetaFileRef);
 
     }
-
-    private init() {
-        // FIXME: is this even needed anymore?
-
-        for (const repoDocInfo of Object.values(this.repoDocInfoIndex)) {
-            this.updateTagsDB(repoDocInfo);
-        }
-
-    }
-
 
 }

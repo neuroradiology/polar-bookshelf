@@ -1,12 +1,10 @@
 import * as React from 'react';
-import {Logger} from '../../../../web/js/logger/Logger';
-import {Statistics} from '../../../../web/js/metadata/Statistics';
-import {IDocInfo} from '../../../../web/js/metadata/DocInfo';
+import {DocInfoStatistics} from '../../../../web/js/metadata/DocInfoStatistics';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import StatTitle from './StatTitle';
 import {ResponsiveBar} from '@nivo/bar';
-import {Arrays} from '../../../../web/js/util/Arrays';
-
-const log = Logger.create();
+import {Arrays} from "polar-shared/src/util/Arrays";
+import {StatBox} from "./StatBox";
 
 export default class NewDocumentRateChart extends React.Component<IProps, IState> {
 
@@ -20,7 +18,7 @@ export default class NewDocumentRateChart extends React.Component<IProps, IState
 
     public render() {
 
-        const dateStats = Statistics.computeDocumentsAddedRate(this.props.docInfos);
+        const dateStats = DocInfoStatistics.computeDocumentsAddedRate(this.props.docInfos);
 
         const labels = dateStats.map(current => current.date);
         const ticks = Arrays.sample(labels, 10);
@@ -36,9 +34,9 @@ export default class NewDocumentRateChart extends React.Component<IProps, IState
 
             <div id="new-documents-per-day-chart" className="p-1">
 
-                <StatTitle>New Documents Per Day</StatTitle>
-
-                <div className="p-1" style={{height: '300px', width: '100%'}}>
+                <StatBox style={{height: '325px', width: '100%'}}>
+                    <>
+                    <StatTitle>New Documents Per Day</StatTitle>
 
                     <ResponsiveBar
                         data={data}
@@ -53,8 +51,8 @@ export default class NewDocumentRateChart extends React.Component<IProps, IState
                             left: 40
                         }}
                         padding={0.3}
-                        colors="category10"
-                        colorBy="id"
+                        colors="nivo"
+                        // indexBy="id"
                         defs={[
                             {
                                 "id": "dots",
@@ -115,9 +113,8 @@ export default class NewDocumentRateChart extends React.Component<IProps, IState
                         motionDamping={15}
 
                     />
-
-                </div>
-
+                    </>
+                </StatBox>
 
             </div>
 

@@ -1,73 +1,55 @@
 import {LoadDocRequest} from '../LoadDocRequest';
-import {Preconditions} from '../../../../Preconditions';
-import {IProvider} from '../../../../util/Providers';
-import {PersistenceLayer} from '../../../../datastore/PersistenceLayer';
-import {Backend} from '../../../../datastore/Backend';
-import {Logger} from '../../../../logger/Logger';
-import {PDFLoader} from '../../file_loaders/PDFLoader';
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import {PersistenceLayerProvider} from '../../../../datastore/PersistenceLayer';
 import {IDocLoader, IDocLoadRequest} from '../IDocLoader';
-import {Nav} from '../../../../ui/util/Nav';
-import {PHZLoader} from '../../file_loaders/PHZLoader';
-
-const log = Logger.create();
+import {ViewerURLs} from "../ViewerURLs";
+import {DocURLLoader, useDocURLLoader} from './DocURLLoader';
+import {usePersistenceLayerContext} from "../../../../../../apps/repository/js/persistence_layer/PersistenceLayerApp";
+import {useDocMigration} from "../DocMigration";
+import React from 'react';
 
 export class BrowserDocLoader implements IDocLoader {
 
-    private readonly persistenceLayerProvider: IProvider<PersistenceLayer>;
-
-    constructor(persistenceLayerProvider: IProvider<PersistenceLayer>) {
+    constructor(private readonly persistenceLayerProvider: PersistenceLayerProvider) {
         this.persistenceLayerProvider = persistenceLayerProvider;
     }
 
     public create(loadDocRequest: LoadDocRequest): IDocLoadRequest {
 
-        const linkLoader = Nav.createLinkLoader();
+        const viewerURL = ViewerURLs.create(this.persistenceLayerProvider, loadDocRequest);
+
+        const linkLoader = DocURLLoader.create();
 
         Preconditions.assertPresent(loadDocRequest.fingerprint, "fingerprint");
         Preconditions.assertPresent(loadDocRequest.backendFileRef, "backendFileRef");
         Preconditions.assertPresent(loadDocRequest.backendFileRef.name, "backendFileRef.name");
 
-        const persistenceLayer = this.persistenceLayerProvider.get();
-
         return {
 
             async load(): Promise<void> {
-
-                const {backendFileRef} = loadDocRequest;
-
-                const optionalDatastoreFile
-                    = await persistenceLayer.getFile(backendFileRef.backend, backendFileRef, {noExistenceCheck: true});
-
-                if (optionalDatastoreFile.isPresent()) {
-
-                    const datastoreFile = optionalDatastoreFile.get();
-
-                    const toViewerURL = () => {
-
-                        const fileName = backendFileRef.name;
-
-                        if (fileName.endsWith(".pdf")) {
-                            return PDFLoader.createViewerURL(datastoreFile.url, backendFileRef.name);
-                        } else if (fileName.endsWith(".phz")) {
-                            return PHZLoader.createViewerURL(datastoreFile.url, backendFileRef.name);
-                        } else {
-                            throw new Error("Unable to handle file: " + fileName);
-                        }
-
-                    };
-
-                    const viewerURL = toViewerURL();
-
-                    linkLoader.load(viewerURL);
-
-                } else {
-                    log.warn("No datastore file for: ", loadDocRequest);
-                }
-
+                console.log("Loading URL: ", viewerURL);
+                linkLoader(viewerURL);
             }
 
         };
 
     }
+
+}
+
+export function useBrowserDocLoader() {
+
+    const {persistenceLayerProvider} = usePersistenceLayerContext()
+    const docURLLoader = useDocURLLoader();
+    const docMigration = useDocMigration();
+
+    return React.useCallback((loadDocRequest) => {
+
+        if (! docMigration(loadDocRequest)) {
+            const viewerURL = ViewerURLs.create(persistenceLayerProvider, loadDocRequest);
+            docURLLoader(viewerURL);
+        }
+
+    }, [docMigration, docURLLoader]);
 
 }

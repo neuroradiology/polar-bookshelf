@@ -7,11 +7,11 @@ import {DocMeta} from '../../../../metadata/DocMeta';
 import {DefaultPersistenceLayer} from '../../../../datastore/DefaultPersistenceLayer';
 import {assert} from 'chai';
 import {AnkiSyncEngine} from './AnkiSyncEngine';
-import {Texts} from '../../../../metadata/Texts';
-import {TextType} from '../../../../metadata/TextType';
+import {Texts} from 'polar-shared/src/metadata/Texts';
+import {TextType} from 'polar-shared/src/metadata/TextType';
 import {Flashcards} from '../../../../metadata/Flashcards';
-import {FlashcardType} from '../../../../metadata/FlashcardType';
-import {MockDocMetas} from '../../../../metadata/DocMetas';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
+import {DocMetas, MockDocMetas} from '../../../../metadata/DocMetas';
 
 xdescribe('AnkiSyncEngine', function() {
 
@@ -33,7 +33,7 @@ xdescribe('AnkiSyncEngine', function() {
 
         const flashcard = createMockFlashcard();
 
-        const pageMeta = docMeta.getPageMeta(1);
+        const pageMeta = DocMetas.getPageMeta(docMeta, 1);
 
         pageMeta.flashcards[flashcard.id] = flashcard;
 

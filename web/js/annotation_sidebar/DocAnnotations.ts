@@ -1,217 +1,392 @@
-import {DocMeta} from '../metadata/DocMeta';
-import {PageMeta} from '../metadata/PageMeta';
-import {isPresent} from '../Preconditions';
-import {Comment} from '../metadata/Comment';
-import {AnnotationType} from '../metadata/AnnotationType';
-import {BaseHighlight} from '../metadata/BaseHighlight';
-import {Screenshot} from '../metadata/Screenshot';
-import {Screenshots} from '../metadata/Screenshots';
-import {Text} from '../metadata/Text';
-import {DocAnnotation} from './DocAnnotation';
-import {AreaHighlight} from '../metadata/AreaHighlight';
-import {TextHighlight} from '../metadata/TextHighlight';
-import {Optional} from '../util/ts/Optional';
-import {Rect} from '../Rect';
-import {Flashcard} from '../metadata/Flashcard';
+import {AnnotationType} from 'polar-shared/src/metadata/AnnotationType';
+import {
+    createChildren,
+    IDocAnnotation,
+    IDocAnnotationRef
+} from './DocAnnotation';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {Flashcards} from '../metadata/Flashcards';
+import {Point} from '../Point';
+import {ObjectIDs} from '../util/ObjectIDs';
+import {Images} from '../metadata/Images';
+import {DocAnnotationIndex} from "./DocAnnotationIndex";
+import {DocFileResolver} from "../datastore/DocFileResolvers";
+import {IPageMeta} from "polar-shared/src/metadata/IPageMeta";
+import {IBaseHighlight} from "polar-shared/src/metadata/IBaseHighlight";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {IComment} from "polar-shared/src/metadata/IComment";
+import {ITextHighlight} from "polar-shared/src/metadata/ITextHighlight";
+import {IAreaHighlight} from "polar-shared/src/metadata/IAreaHighlight";
+import {IAuthor} from "polar-shared/src/metadata/IAuthor";
+import {IRect} from 'polar-shared/src/util/rects/IRect';
+import {Providers} from "polar-shared/src/util/Providers";
+import {AnnotationTexts} from "polar-shared/src/metadata/AnnotationTexts";
+import {PlainTextStr} from "polar-shared/src/util/Strings";
+import {IFlashcard} from "polar-shared/src/metadata/IFlashcard";
+import {HighlightColors} from "polar-shared/src/metadata/HighlightColor";
+import {Tag} from "polar-shared/src/tags/Tags";
+import {arrayStream} from "polar-shared/src/util/ArrayStreams";
+import {
+    InheritedTag,
+    toSelfInheritedTags
+} from "polar-shared/src/tags/InheritedTags";
+import {Refs} from "polar-shared/src/metadata/Refs";
+import {IDocMetaRef} from "polar-shared/src/metadata/AnnotationRefs";
 
-export class DocAnnotations {
+export namespace DocAnnotations {
 
-    public static getAnnotationsForPage(docMeta: DocMeta): DocAnnotation[] {
+    /**
+     * Convert this to a lightweight ref that can be used without triggering
+     * component re-render in React.
+     */
+    export function toRef(docAnnotation: IDocAnnotation): IDocAnnotationRef {
 
-        const result: DocAnnotation[] = [];
+        const children = docAnnotation.children().map(toRef);
 
-        Object.values(docMeta.pageMetas).forEach(pageMeta => {
-            result.push(...this.getTextHighlights(pageMeta));
-            result.push(...this.getAreaHighlights(pageMeta));
-        });
+        const docMetaRef: IDocMetaRef = {
+            id: docAnnotation.docMeta.docInfo.fingerprint
+        };
 
-        const index: {[id: string]: DocAnnotation} = {};
+        const tmp: any = {...docAnnotation};
 
-        for (const docAnnotation of result) {
-            index[docAnnotation.id] = docAnnotation;
+        delete tmp.docMeta;
+        delete tmp.docInfo;
+        delete tmp.pageMeta;
+        delete tmp.index;
+        delete tmp.obj;
+        delete tmp.oid;
+        delete tmp.getIndex;
+
+        const result: IDocAnnotationRef = {
+            ...tmp,
+            docMetaRef,
+            children: () => children
         }
-
-        // now update the index of all our comments...
 
         return result;
 
     }
 
-    public static createFromFlashcard(flashcard: Flashcard, pageMeta: PageMeta): DocAnnotation {
+    function isImmutable(author?: IAuthor) {
 
-        return {
-            id: flashcard.id,
-            annotationType: AnnotationType.FLASHCARD,
-            // html: comment.content.HTML!,
-            fields: Flashcards.convertFieldsToMap(flashcard.fields),
-            pageNum: pageMeta.pageInfo.num,
-            // irrelevant on comments
-            position: {
-                x: 0,
-                y: 0
-            },
-            created: flashcard.created,
-            pageMeta,
-            children: [],
-            comments: [],
-            ref: flashcard.ref,
-            original: flashcard
-
-        };
-
-    }
-
-    public static createFromComment(comment: Comment, pageMeta: PageMeta): DocAnnotation {
-
-        return {
-            id: comment.id,
-            annotationType: AnnotationType.COMMENT,
-            html: comment.content.HTML!,
-            pageNum: pageMeta.pageInfo.num,
-            // irrelevant on comments
-            position: {
-                x: 0,
-                y: 0
-            },
-            created: comment.created,
-            pageMeta,
-            children: [],
-            comments: [],
-            ref: comment.ref,
-            original: comment
-
-        };
-
-    }
-
-    public static createFromAreaHighlight(areaHighlight: AreaHighlight, pageMeta: PageMeta): DocAnnotation {
-
-        const screenshot = this.getScreenshot(pageMeta, areaHighlight);
-
-        return {
-            id: areaHighlight.id,
-            annotationType: AnnotationType.AREA_HIGHLIGHT,
-            screenshot,
-            html: undefined,
-            pageNum: pageMeta.pageInfo.num,
-            position: {
-                x: this.firstRect(areaHighlight).map(current => current.left).getOrElse(0),
-                y: this.firstRect(areaHighlight).map(current => current.top).getOrElse(0),
-            },
-            created: areaHighlight.created,
-            pageMeta,
-            children: [],
-            comments: [],
-            original: areaHighlight
-        };
-
-    }
-
-    public static createFromTextHighlight(textHighlight: TextHighlight, pageMeta: PageMeta): DocAnnotation {
-
-        let html: string = "";
-
-        if (typeof textHighlight.text === 'string') {
-            html = `<p>${textHighlight.text}</p>`;
+        if (author && author.guest) {
+            return true;
         }
 
-        if (isPresent(textHighlight.text) && typeof textHighlight.text === 'object') {
+        return false;
 
-            // TODO: move this to an isInstanceOf in Texts
-            if ('TEXT' in <any> (textHighlight.text) || 'HTML' in <any> (textHighlight.text)) {
+    }
 
-                const text = <Text> textHighlight.text;
+    export async function getAnnotationsForPage(docFileResolver: DocFileResolver,
+                                                docAnnotationIndex: DocAnnotationIndex,
+                                                docMeta: IDocMeta): Promise<IDocAnnotation[]> {
 
-                if (text.TEXT) {
-                    html = `${text.TEXT}`;
-                }
+        const result: IDocAnnotation[] = [];
 
-                if (text.HTML) {
-                    html = text.HTML;
-                }
+        const pageMetas = Object.values(docMeta.pageMetas);
 
+        for (const pageMeta of pageMetas) {
+
+            const areaHighlights = await getAreaHighlights(docFileResolver, docMeta, pageMeta);
+            const textHighlights = getTextHighlights(docMeta, pageMeta);
+
+            result.push(...textHighlights);
+            result.push(...areaHighlights);
+
+        }
+
+        return result;
+
+    }
+
+    export function createFromFlashcard(docMeta: IDocMeta,
+                                      annotation: IFlashcard,
+                                      pageMeta: IPageMeta): IDocAnnotation {
+
+        const textConverter = ITextConverters.create(AnnotationType.FLASHCARD, annotation);
+
+        const init = createInit(docMeta);
+
+        const parent = annotation.ref ? Refs.parse(annotation.ref) : undefined;
+
+        return {
+            ...init,
+            oid: ObjectIDs.create(),
+            id: annotation.id,
+            guid: annotation.guid,
+            fingerprint: docMeta.docInfo.fingerprint,
+            docInfo: docMeta.docInfo,
+            ...textConverter,
+            fields: Flashcards.convertFieldsToMap(annotation.fields),
+            pageNum: pageMeta.pageInfo.num,
+            // irrelevant on comments
+            position: {
+                x: 0,
+                y: 0
+            },
+            created: annotation.created,
+            lastUpdated: annotation.lastUpdated || annotation.created,
+            docMeta,
+            pageMeta,
+            ref: annotation.ref,
+            parent,
+            original: annotation,
+            author: annotation.author,
+            immutable: isImmutable(annotation.author),
+            color: undefined,
+            img: undefined,
+            tags: {...toSelfInheritedTags(annotation.tags), ...init.tags},
+            children: () => [],
+            docMetaRef: {
+                id: docMeta.docInfo.fingerprint
+            },
+            order: undefined
+        };
+
+    }
+
+    export function createFromComment(docMeta: IDocMeta,
+                                    annotation: IComment,
+                                    pageMeta: IPageMeta): IDocAnnotation {
+
+        const iTextConverter = ITextConverters.create(AnnotationType.COMMENT, annotation);
+
+        const init = createInit(docMeta);
+
+        const parent = annotation.ref ? Refs.parse(annotation.ref) : undefined;
+
+        return {
+            ...init,
+            oid: ObjectIDs.create(),
+            id: annotation.id,
+            guid: annotation.guid,
+            fingerprint: docMeta.docInfo.fingerprint,
+            docInfo: docMeta.docInfo,
+            ...iTextConverter,
+            pageNum: pageMeta.pageInfo.num,
+            // irrelevant on comments
+            position: {
+                x: 0,
+                y: 0
+            },
+            created: annotation.created,
+            lastUpdated: annotation.lastUpdated || annotation.created,
+            docMeta,
+            pageMeta,
+            ref: annotation.ref,
+            parent,
+            original: annotation,
+            author: annotation.author,
+            immutable: isImmutable(annotation.author),
+            color: undefined,
+            img: undefined,
+            tags: {...toSelfInheritedTags(annotation.tags), ...init.tags},
+            children: () => [],
+            docMetaRef: {
+                id: docMeta.docInfo.fingerprint
+            },
+            order: undefined
+        };
+
+    }
+
+    export function createFromAreaHighlight(docFileResolver: DocFileResolver,
+                                          docMeta: IDocMeta,
+                                          annotation: IAreaHighlight,
+                                          pageMeta: IPageMeta): IDocAnnotation {
+
+        const createPosition = (): Point => {
+
+            if (annotation.position) {
+                return {...annotation.position};
             }
 
-        }
+            return {
+                x: firstRect(annotation).map(current => current.left).getOrElse(0),
+                y: firstRect(annotation).map(current => current.top).getOrElse(0),
+            };
 
-        const screenshot = this.getScreenshot(pageMeta, textHighlight);
+        };
+
+        const img = Providers.memoize(() => Images.toImg(docFileResolver, annotation.image));
+
+        const position = createPosition();
+
+        const init = createInit(docMeta);
+
+        const children = createChildren(annotation, docMeta, pageMeta);
 
         return {
-            id: textHighlight.id,
-            annotationType: AnnotationType.TEXT_HIGHLIGHT,
-            screenshot,
-            html,
-            pageNum: pageMeta.pageInfo.num,
-            position: {
-                x: this.firstRect(textHighlight).map(current => current.left).getOrElse(0),
-                y: this.firstRect(textHighlight).map(current => current.top).getOrElse(0),
+            ...init,
+            oid: ObjectIDs.create(),
+            id: annotation.id,
+            guid: annotation.guid,
+            fingerprint: docMeta.docInfo.fingerprint,
+            docInfo: docMeta.docInfo,
+            annotationType: AnnotationType.AREA_HIGHLIGHT,
+            get img() {
+                return img();
             },
-            color: textHighlight.color,
-            created: textHighlight.created,
+            text: undefined,
+            html: undefined,
+            pageNum: pageMeta.pageInfo.num,
+            position,
+            color: HighlightColors.withDefaultColor(annotation.color),
+            created: annotation.created,
+            lastUpdated: annotation.lastUpdated || annotation.created,
+            docMeta,
             pageMeta,
-            children: [],
-            comments: [],
-            original: textHighlight
+            ref: undefined,
+            parent: undefined,
+            original: annotation,
+            author: annotation.author,
+            tags: {...toSelfInheritedTags(annotation.tags), ...init.tags},
+            immutable: isImmutable(annotation.author),
+            children,
+            docMetaRef: {
+                id: docMeta.docInfo.fingerprint
+            },
+            order: annotation.order
         };
 
     }
 
-    private static getTextHighlights(pageMeta: PageMeta): DocAnnotation[] {
+    export function createFromTextHighlight(docMeta: IDocMeta,
+                                            annotation: ITextHighlight,
+                                            pageMeta: IPageMeta): IDocAnnotation {
 
-        const result: DocAnnotation[] = [];
+        const iTextConverter = ITextConverters.create(AnnotationType.TEXT_HIGHLIGHT, annotation);
 
-        Object.values(pageMeta.textHighlights).forEach(textHighlight => {
-            result.push(this.createFromTextHighlight(textHighlight, pageMeta));
-        });
+        const init = createInit(docMeta);
 
-        return result;
+        const children = createChildren(annotation, docMeta, pageMeta);
+
+        return {
+            ...init,
+            oid: ObjectIDs.create(),
+            id: annotation.id,
+            guid: annotation.guid,
+            fingerprint: docMeta.docInfo.fingerprint,
+            docInfo: docMeta.docInfo,
+            ...iTextConverter,
+            pageNum: pageMeta.pageInfo.num,
+            position: {
+                x: firstRect(annotation).map(current => current.left).getOrElse(0),
+                y: firstRect(annotation).map(current => current.top).getOrElse(0),
+            },
+            color: HighlightColors.withDefaultColor(annotation.color),
+            created: annotation.created,
+            lastUpdated: annotation.lastUpdated || annotation.created,
+            docMeta,
+            pageMeta,
+            ref: undefined,
+            parent: undefined,
+            original: annotation,
+            author: annotation.author,
+            immutable: isImmutable(annotation.author),
+            tags: {...toSelfInheritedTags(annotation.tags), ...init.tags},
+            img: undefined,
+            children,
+            docMetaRef: {
+                id: docMeta.docInfo.fingerprint
+            },
+            order: annotation.order
+        };
 
     }
 
-    private static getAreaHighlights(pageMeta: PageMeta): DocAnnotation[] {
+    function getTextHighlights(docMeta: IDocMeta, pageMeta: IPageMeta): ReadonlyArray<IDocAnnotation> {
 
-        const result: DocAnnotation[] = [];
+        const textHighlights = Object.values(pageMeta.textHighlights);
 
-        Object.values(pageMeta.areaHighlights).forEach(areaHighlight => {
-            result.push(this.createFromAreaHighlight(areaHighlight, pageMeta));
+        return textHighlights.map(textHighlight => {
+            return createFromTextHighlight(docMeta, textHighlight, pageMeta);
         });
-
-        return result;
 
     }
 
+    async function getAreaHighlights(docFileResolver: DocFileResolver,
+                                     docMeta: IDocMeta,
+                                     pageMeta: IPageMeta): Promise<IDocAnnotation[]> {
 
-    private static getScreenshot(pageMeta: PageMeta, highlight: BaseHighlight): Screenshot | undefined {
+        const result: IDocAnnotation[] = [];
 
-        let screenshot: Screenshot | undefined;
+        const areaHighlights = Object.values(pageMeta.areaHighlights);
 
-        if (highlight.images) {
+        for (const areaHighlight of areaHighlights) {
 
-            Object.values(highlight.images).forEach( image => {
+            const docAnnotation =
+                await createFromAreaHighlight(docFileResolver, docMeta, areaHighlight, pageMeta);
 
-                if (image.rel && image.rel === 'screenshot') {
-
-                    const screenshotURI = Screenshots.parseURI(image.src);
-
-                    if (screenshotURI) {
-                        screenshot = pageMeta.screenshots[screenshotURI.id];
-                    }
-
-                }
-
-            });
+            result.push(docAnnotation);
 
         }
 
-        return screenshot;
+        return result;
 
     }
 
-    private static firstRect(highlight: BaseHighlight): Optional<Rect> {
+    function createInit(docMeta: IDocMeta): DocAnnotationInit {
+
+        const toInheritedTag = (tag: Tag): InheritedTag => {
+            return {
+                source: 'doc',
+                ...tag
+            };
+        };
+
+        const tags =
+            arrayStream(Object.values(docMeta.docInfo.tags || {}))
+                .map(toInheritedTag)
+                .toMap(current => current.id);
+
+        return {
+            tags: {...tags}
+        };
+
+    }
+
+    function firstRect(highlight: IBaseHighlight): Optional<IRect> {
         return Optional.of(highlight)
             .map(current => current.rects)
             .map(current => current[0]);
     }
 
 }
+
+/**
+ * Properties present in most annotations that will be used the same.
+ */
+interface DocAnnotationInit {
+    readonly tags: Readonly<{[id: string]: InheritedTag}> | undefined;
+}
+
+class ITextConverters {
+
+    public static create(annotationType: AnnotationType,
+                         annotation: ITextHighlight | IAreaHighlight | IComment | IFlashcard): ITextConverter {
+
+        const toText = Providers.memoize(() => AnnotationTexts.toText(annotationType, annotation));
+        const toHTML = Providers.memoize(() => AnnotationTexts.toHTML(annotationType, annotation));
+
+        return {
+            annotationType,
+            get text() {
+                return toText();
+            },
+            get html() {
+                return toHTML();
+            },
+        };
+
+    }
+
+}
+
+interface ITextConverter {
+    readonly annotationType: AnnotationType;
+    readonly text: PlainTextStr | undefined;
+    readonly html: PlainTextStr | undefined;
+}
+
+

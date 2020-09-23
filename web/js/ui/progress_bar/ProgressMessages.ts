@@ -1,9 +1,9 @@
 import {Broadcasters} from '../../ipc/Broadcasters';
 import {ProgressMessage} from './ProgressMessage';
-import {AppRuntime} from '../../AppRuntime';
 import {Messenger} from '../../electron/messenger/Messenger';
 import {TypedMessage} from '../../util/TypedMessage';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {AppRuntime} from "../../AppRuntime";
 
 const log = Logger.create();
 
@@ -14,9 +14,9 @@ export class ProgressMessages {
     public static broadcast(progressMessage: ProgressMessage) {
 
         if (AppRuntime.get() === 'electron-main') {
-
+            // this is done so that the main process in electron can send a
+            // progress message.
             Broadcasters.send(this.CHANNEL, progressMessage);
-
         } else {
 
             const message: TypedMessage<ProgressMessage> = {

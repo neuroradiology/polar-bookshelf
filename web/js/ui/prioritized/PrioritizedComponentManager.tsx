@@ -1,19 +1,11 @@
 import * as React from 'react';
-import {Button} from 'reactstrap';
-import {ActiveSelection} from '../popup/ActiveSelections';
-import {IEventDispatcher} from '../../reactor/SimpleReactor';
-import {AnnotationDescriptor} from '../../metadata/AnnotationDescriptor';
-import {HighlightCreatedEvent} from '../../comments/react/HighlightCreatedEvent';
-import {HighlightColor} from '../../metadata/BaseHighlight';
-import {PopupStateEvent} from '../popup/PopupStateEvent';
-import {EventListener} from '../../reactor/EventListener';
-import {Numbers} from '../../util/Numbers';
 import {SplashLifecycle} from '../../../../apps/repository/js/splash2/SplashLifecycle';
 import {LifecycleEvents} from '../util/LifecycleEvents';
 import {LocalPrefs} from '../../util/LocalPrefs';
-import {RendererAnalytics} from '../../ga/RendererAnalytics';
 import {DatastoreOverview} from '../../datastore/Datastore';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {Numbers} from "polar-shared/src/util/Numbers";
+import {Analytics} from "../../analytics/Analytics";
 
 const log = Logger.create();
 
@@ -59,9 +51,9 @@ export class PrioritizedComponentManager extends React.Component<IProps, IState>
         // mark this as shown so that we delay the next splash, even on refresh
         SplashLifecycle.markShown();
 
-        RendererAnalytics.event({category: 'splashes', action: 'shown'});
-
-        RendererAnalytics.event({category: 'splashes-shown', action: prioritizedComponentRef.id});
+        // Analytics.event({category: 'splashes', action: 'shown'});
+        //
+        // Analytics.event({category: 'splashes-shown', action: prioritizedComponentRef.id});
 
         // return the top ranking element.
         return prioritizedComponentRef.create();

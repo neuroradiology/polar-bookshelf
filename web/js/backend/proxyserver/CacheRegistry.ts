@@ -1,29 +1,22 @@
-import {ProxyServerConfig} from './ProxyServerConfig';
-import {Preconditions} from '../../Preconditions';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 import {CachedRequestsHolder} from './CachedRequestsHolder';
 import {CacheEntry} from './CacheEntry';
 import {CachedRequest} from './CachedRequest';
 import {CacheEntriesFactory} from './CacheEntriesFactory';
-import {forDict} from '../../util/Functions';
-import {Logger} from '../../logger/Logger';
+import {forDict} from 'polar-shared/src/util/Functions';
+import {Logger} from 'polar-shared/src/logger/Logger';
 
 const log = Logger.create();
 
 export class CacheRegistry {
-
-    private readonly proxyServerConfig: ProxyServerConfig;
 
     private readonly registry: {[url: string]: CacheEntry} = {};
 
     /**
      *
      */
-    constructor(proxyServerConfig: ProxyServerConfig) {
-
-        this.proxyServerConfig = Preconditions.assertNotNull(proxyServerConfig);
-
+    constructor() {
         this.registry = {};
-
     }
 
     /**

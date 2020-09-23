@@ -1,13 +1,37 @@
 import * as React from 'react';
-import {Logger} from '../../../../logger/Logger';
-import {FlashcardType} from '../../../../metadata/FlashcardType';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
 import {FlashcardInputFieldsType} from './FlashcardInputs';
 import {FlashcardInputForCloze} from './FlashcardInputForCloze';
 import {FlashcardInputForFrontAndBack} from './FlashcardInputForFrontAndBack';
 import {Flashcard} from '../../../../metadata/Flashcard';
-import {Comment} from '../../../../metadata/Comment';
 
-const log = Logger.create();
+export interface IProps {
+
+    readonly id: string;
+
+    /**
+     * The default value to show in the flashcard
+     */
+    readonly defaultValue?: string;
+
+    readonly flashcardType?: FlashcardType;
+
+    readonly onFlashcard: FlashcardCallback;
+
+    readonly cancelButton: JSX.Element;
+
+    readonly existingFlashcard?: Flashcard;
+
+}
+
+export interface IState {
+    readonly iter: number;
+    readonly flashcardType: FlashcardType;
+}
+
+export type FlashcardCallback = (flashcardType: FlashcardType,
+                                 fields: Readonly<FlashcardInputFieldsType>,
+                                 existingFlashcard?: Flashcard) => void;
 
 export class FlashcardInput extends React.Component<IProps, IState> {
 
@@ -33,6 +57,7 @@ export class FlashcardInput extends React.Component<IProps, IState> {
             return ( <FlashcardInputForFrontAndBack id={this.props.id}
                                                     cancelButton={this.props.cancelButton}
                                                     existingFlashcard={this.props.existingFlashcard}
+                                                    defaultValue={this.props.defaultValue}
                                                     onFlashcard={(flashcardType, fields) => this.onFlashcard(flashcardType, fields)}
                                                     onFlashcardChangeType={flashcardType => this.onFlashcardChangeType(flashcardType)}/> );
 
@@ -41,6 +66,7 @@ export class FlashcardInput extends React.Component<IProps, IState> {
             return ( <FlashcardInputForCloze id={this.props.id}
                                              cancelButton={this.props.cancelButton}
                                              existingFlashcard={this.props.existingFlashcard}
+                                             defaultValue={this.props.defaultValue}
                                              onFlashcard={(flashcardType, fields) => this.onFlashcard(flashcardType, fields)}
                                              onFlashcardChangeType={flashcardType => this.onFlashcardChangeType(flashcardType)}/> );
 
@@ -72,7 +98,7 @@ export class FlashcardInput extends React.Component<IProps, IState> {
     }
 
     private setDefaultFlashcardType(flashcardType: FlashcardType) {
-        window.localStorage.setItem('default-flashcard-type', flashcardType);
+        localStorage.setItem('default-flashcard-type', flashcardType);
     }
 
     private onFlashcard(flashcardType: FlashcardType,
@@ -88,25 +114,3 @@ export class FlashcardInput extends React.Component<IProps, IState> {
 
 }
 
-export interface IProps {
-
-    readonly id: string;
-
-    readonly flashcardType?: FlashcardType;
-
-    readonly onFlashcard: FlashcardCallback;
-
-    readonly cancelButton: JSX.Element;
-
-    readonly existingFlashcard?: Flashcard;
-
-}
-
-export interface IState {
-    readonly iter: number;
-    readonly flashcardType: FlashcardType;
-}
-
-export type FlashcardCallback = (flashcardType: FlashcardType,
-                                 fields: Readonly<FlashcardInputFieldsType>,
-                                 existingFlashcard?: Flashcard) => void;

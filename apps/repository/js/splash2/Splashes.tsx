@@ -1,14 +1,12 @@
 import * as React from 'react';
-import {Logger} from '../../../../web/js/logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {PersistenceLayerManager} from '../../../../web/js/datastore/PersistenceLayerManager';
-import {UserFacts} from './SplashEngine';
-import {SplashEngine} from './SplashEngine';
-import {DefaultSplashEngine} from './SplashEngine';
-import {Version} from '../../../../web/js/util/Version';
-import {TimeDurations} from '../../../../web/js/util/TimeDurations';
-import {RendererAnalytics} from '../../../../web/js/ga/RendererAnalytics';
+import {DefaultSplashEngine, SplashEngine, UserFacts} from './SplashEngine';
+import {Version} from 'polar-shared/src/util/Version';
+import {TimeDurations} from 'polar-shared/src/util/TimeDurations';
 import {NPSModal} from './nps/NPSModal';
 import {WhatsNewModal} from './whats_new/WhatsNewModal';
+import {SuggestionsModal} from './suggestions/SuggestionsModal';
 
 const log = Logger.create();
 
@@ -68,6 +66,9 @@ export class Splashes extends React.Component<IProps, IState> {
             case 'net-promoter':
                 return <NPSModal/>;
 
+            case 'suggestions':
+                return <SuggestionsModal/>;
+
             case 'whats-new':
                 return <WhatsNewModal/>;
 
@@ -76,16 +77,18 @@ export class Splashes extends React.Component<IProps, IState> {
     }
 
     private onWhatsNew() {
-        RendererAnalytics.event({category: 'splash-subsystem', action: 'displaying-whats-new'});
-
+        // RendererAnalytics.event({category: 'splash-subsystem', action: 'displaying-whats-new'});
         this.setState({...this.state, splash: 'whats-new'});
     }
 
     private onNetPromoter() {
-
-        RendererAnalytics.event({category: 'splash-subsystem', action: 'displaying-net-promoter'});
+        // RendererAnalytics.event({category: 'splash-subsystem', action: 'displaying-net-promoter'});
         this.setState({...this.state, splash: 'net-promoter'});
+    }
 
+    private onSuggestions() {
+        // RendererAnalytics.event({category: 'splash-subsystem', action: 'displaying-suggestions'});
+        this.setState({...this.state, splash: 'suggestions'});
     }
 
     private async init() {
@@ -96,14 +99,15 @@ export class Splashes extends React.Component<IProps, IState> {
 
             const splashEngine = new DefaultSplashEngine(userFacts, {
                 onWhatsNew: () => this.onWhatsNew(),
-                onNetPromoter: () => this.onNetPromoter()
+                onNetPromoter: () => this.onNetPromoter(),
+                onSuggestions: () => this.onSuggestions()
             });
 
             this.doUpdate(splashEngine);
 
         } else {
             log.warn("Unable to run splash engine due to no user facts");
-            RendererAnalytics.event({category: 'splash-subsystem', action: 'warn-no-user-facts'});
+            // RendererAnalytics.event({category: 'splash-subsystem', action: 'warn-no-user-facts'});
         }
 
     }
@@ -111,7 +115,7 @@ export class Splashes extends React.Component<IProps, IState> {
     private doUpdate(splashEngine: SplashEngine) {
 
         try {
-
+            // RendererAnalytics.event({category: 'splash-subsystem-background', action: 'do-update'});
             splashEngine.run();
 
         } finally {
@@ -165,5 +169,5 @@ interface IState {
     readonly splash: SplashID;
 }
 
-type SplashID = 'none' | 'net-promoter' | 'whats-new';
+type SplashID = 'none' | 'net-promoter' | 'whats-new' | 'suggestions';
 

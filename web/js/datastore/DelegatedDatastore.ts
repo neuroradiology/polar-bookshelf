@@ -1,16 +1,29 @@
-import {AbstractDatastore, BinaryFileData, Datastore, DatastoreID, DatastoreOverview, DocMetaSnapshotEventListener, FileRef, InitResult, PrefsProvider, SnapshotResult} from './Datastore';
+import {
+    AbstractDatastore,
+    BinaryFileData,
+    Datastore,
+    DatastoreID,
+    DatastoreOverview,
+    DocMetaSnapshotEventListener,
+    DocMetaSnapshotOpts, DocMetaSnapshotResult,
+    InitResult,
+    PrefsProvider,
+    SnapshotResult
+} from './Datastore';
 import {DeleteResult} from './Datastore';
 import {WriteFileOpts} from './Datastore';
 import {DatastoreCapabilities} from './Datastore';
-import {GetFileOpts} from './Datastore';
 import {Directories} from './Directories';
 import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
-import {Preconditions} from '../Preconditions';
-import {Backend} from './Backend';
-import {DocFileMeta} from './DocFileMeta';
-import {Optional} from '../util/ts/Optional';
-import {IDocInfo} from '../metadata/DocInfo';
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {WriteOpts} from './Datastore';
+import {DatastoreMutation} from './DatastoreMutation';
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {GetFileOpts} from "polar-shared/src/datastore/IDatastore";
 
 /**
  * A datastore that just forwards events to the given delegate.
@@ -39,8 +52,8 @@ export class DelegatedDatastore extends AbstractDatastore implements Datastore {
         return this.delegate.contains(fingerprint);
     }
 
-    public delete(docMetaFileRef: DocMetaFileRef): Promise<Readonly<DeleteResult>> {
-        return this.delegate.delete(docMetaFileRef);
+    public delete(docMetaFileRef: DocMetaFileRef, datastoreMutation?: DatastoreMutation<boolean>): Promise<Readonly<DeleteResult>> {
+        return this.delegate.delete(docMetaFileRef, datastoreMutation);
     }
 
     public writeFile(backend: Backend, ref: FileRef, data: BinaryFileData, opts?: WriteFileOpts): Promise<DocFileMeta> {
@@ -51,7 +64,7 @@ export class DelegatedDatastore extends AbstractDatastore implements Datastore {
         return this.delegate.containsFile(backend, ref);
     }
 
-    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>> {
+    public getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): DocFileMeta {
         return this.delegate.getFile(backend, ref, opts);
     }
 
@@ -63,7 +76,11 @@ export class DelegatedDatastore extends AbstractDatastore implements Datastore {
         return this.delegate.getDocMeta(fingerprint);
     }
 
-    public getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaSnapshot(opts: DocMetaSnapshotOpts<string>): Promise<DocMetaSnapshotResult> {
+        return this.delegate.getDocMetaSnapshot(opts);
+    }
+
+    public getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
         return this.delegate.getDocMetaRefs();
     }
 

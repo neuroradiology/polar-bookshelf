@@ -1,10 +1,14 @@
 import {ipcRenderer} from 'electron';
 import {DocInfoAdvertisement, DocInfoAdvertisementListener} from './DocInfoAdvertisement';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {SimpleReactor} from '../../reactor/SimpleReactor';
 
 const log = Logger.create();
 
+/**
+ * @Deprecated - pretty sure we don't need this anymore now that we're on
+ * Firebase
+ */
 export class DocInfoAdvertisementListenerService {
 
     private readonly reactor: SimpleReactor<DocInfoAdvertisement> = new SimpleReactor();

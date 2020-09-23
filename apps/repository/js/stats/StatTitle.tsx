@@ -1,28 +1,16 @@
 import * as React from 'react';
-import {Logger} from '../../../../web/js/logger/Logger';
+import Typography from '@material-ui/core/Typography';
 
-const log = Logger.create();
+interface IProps {
+    readonly children: string;
+}
 
-export default class StatTitle extends React.Component<any, any> {
+export default function StatTitle(props: IProps) {
 
-    constructor(props: any, context: any) {
-        super(props, context);
+    return (
 
-    }
+        <h2>{props.children}</h2>
 
-    public render() {
-
-        return (
-
-            <div className="pt-1 pb-1 w-100 text-center"
-                 style={{fontWeight: 'bold', fontSize: '18px'}}>
-
-                {this.props.children}
-
-            </div>
-
-        );
-    }
-
+    );
 }
 

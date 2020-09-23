@@ -1,9 +1,9 @@
 import {assert} from 'chai';
 import {ProgressCalculator} from './ProgressCalculator';
 import {ResolvablePromise} from './ResolvablePromise';
-import {TestingTime} from '../test/TestingTime';
+import {TestingTime} from 'polar-shared/src/test/TestingTime';
 import {Sequences} from './Sequences';
-import {ISODateTimeStrings} from '../metadata/ISODateTimeStrings';
+import {ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
 
 
 describe('Sequences', function() {

@@ -1,27 +1,41 @@
 /**
  * Datastore just in memory with no on disk persistence.
  */
-import {AbstractDatastore, Datastore, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileMeta, FileRef, SnapshotResult, DatastoreOverview, PrefsProvider} from './Datastore';
-import {isPresent, Preconditions} from '../Preconditions';
+import {
+    AbstractDatastore,
+    AbstractPrefsProvider,
+    Datastore,
+    DatastoreCapabilities,
+    DatastoreOverview,
+    DefaultWriteFileOpts,
+    DeleteResult,
+    DocMetaSnapshotEventListener,
+    ErrorListener,
+    FileMeta,
+    PrefsProvider,
+    SnapshotResult,
+    WriteFileOpts,
+    WriteOpts
+} from './Datastore';
+import {isPresent, Preconditions} from 'polar-shared/src/Preconditions';
 import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
-import {Logger} from '../logger/Logger';
-import {FileHandle, Files} from '../util/Files';
-import {Backend} from './Backend';
-import {DocFileMeta} from './DocFileMeta';
-import {Optional} from '../util/ts/Optional';
-import {DocInfo} from '../metadata/DocInfo';
-import {DatastoreMutation, DefaultDatastoreMutation} from './DatastoreMutation';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {FileHandle, Files} from 'polar-shared/src/util/Files';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {DefaultDatastoreMutation} from './DatastoreMutation';
 import {Datastores} from './Datastores';
-import {NULL_FUNCTION} from '../util/Functions';
+import {NULL_FUNCTION} from 'polar-shared/src/util/Functions';
 import {DiskInitResult} from './DiskDatastore';
-import {ISODateTimeString, ISODateTimeStrings} from '../metadata/ISODateTimeStrings';
-import {DictionaryPrefs} from '../util/prefs/Prefs';
-import {Providers} from '../util/Providers';
-import {WriteFileOpts} from './Datastore';
-import {DefaultWriteFileOpts} from './Datastore';
-import {DatastoreCapabilities} from './Datastore';
-import {NetworkLayer} from './Datastore';
-import {WriteOpts} from './Datastore';
+import {
+    ISODateTimeString,
+    ISODateTimeStrings
+} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {NonPersistentPrefs, PersistentPrefs} from '../util/prefs/Prefs';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {NetworkLayer} from "polar-shared/src/datastore/IDatastore";
 
 const log = Logger.create();
 
@@ -35,7 +49,7 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
 
     protected readonly files: {[key: string]: FileData} = {};
 
-    private readonly prefs = new DictionaryPrefs();
+    private readonly prefs = new NonPersistentPrefs();
 
     constructor() {
         super();
@@ -107,17 +121,17 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    public async getFile(backend: Backend, ref: FileRef): Promise<Optional<DocFileMeta>> {
+    public getFile(backend: Backend, ref: FileRef): DocFileMeta {
 
         const key = MemoryDatastore.toFileRefKey(backend, ref);
 
         if (!key) {
-            return Optional.empty();
+            throw new Error(`No file for ${backend} at ${ref.name}`);
         }
 
         const fileData = this.files[key];
 
-        return Optional.of({backend, ref, url: 'NOT_IMPLEMENTED:none', meta: fileData.meta});
+        return {backend, ref, url: 'NOT_IMPLEMENTED:none'};
 
     }
 
@@ -147,7 +161,7 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
      */
     public async write(fingerprint: string,
                        data: string,
-                       docInfo: DocInfo,
+                       docInfo: IDocInfo,
                        opts: WriteOpts = {}): Promise<void> {
 
         const datastoreMutation = opts.datastoreMutation || new DefaultDatastoreMutation();
@@ -161,7 +175,7 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
 
     }
 
-    public async getDocMetaRefs(): Promise<DocMetaRef[]> {
+    public async getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>> {
 
         return Object.keys(this.docMetas)
             .map(fingerprint => <DocMetaRef> {fingerprint});
@@ -202,7 +216,20 @@ export class MemoryDatastore extends AbstractDatastore implements Datastore {
     }
 
     public getPrefs(): PrefsProvider {
-        return Providers.toInterface(() => this.prefs);
+
+        class PrefsProviderImpl extends AbstractPrefsProvider {
+
+            constructor(private readonly prefs: PersistentPrefs) {
+                super();
+            }
+
+            public get(): PersistentPrefs {
+                return this.prefs;
+            }
+
+        }
+
+        return new PrefsProviderImpl(this.prefs);
     }
 
 }

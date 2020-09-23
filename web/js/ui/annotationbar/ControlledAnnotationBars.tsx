@@ -1,76 +1,165 @@
-import {AnnotationBarCallbacks} from './AnnotationBar';
+import {
+    AnnotationBarCallbacks,
+    ControlledAnnotationBar
+} from './ControlledAnnotationBar';
 import * as React from 'react';
-import {ActiveSelectionEvent, ActiveSelections} from '../popup/ActiveSelections';
+import {
+    ActiveSelectionEvent,
+    ActiveSelections
+} from '../popup/ActiveSelections';
 import {ControlledPopupProps} from '../popup/ControlledPopup';
-import {ControlledAnnotationBar} from './ControlledAnnotationBar';
-import {Elements} from '../../util/Elements';
-import {Logger} from '../../logger/Logger';
 import * as ReactDOM from 'react-dom';
 import {Point} from '../../Point';
-import {Optional} from '../../util/ts/Optional';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
 import {Points} from '../../Points';
-import {DocFormatFactory} from '../../docformat/DocFormatFactory';
 import {HighlightCreatedEvent} from '../../comments/react/HighlightCreatedEvent';
+import {Elements} from "../../util/Elements";
+import {isPresent} from 'polar-shared/src/Preconditions';
+import {FileType} from "../../apps/main/file_loaders/FileType";
 
-const log = Logger.create();
+export interface RegisterOpts {
+    readonly fileType: FileType;
+    readonly docViewerElementProvider: () => HTMLElement;
+}
 
-export class ControlledAnnotationBars {
+export namespace ControlledAnnotationBars {
 
-    public static create(controlledPopupProps: ControlledPopupProps,
-                         annotationBarCallbacks: AnnotationBarCallbacks) {
+    export function create(controlledPopupProps: ControlledPopupProps,
+                           annotationBarCallbacks: AnnotationBarCallbacks,
+                           opts: RegisterOpts) {
 
-        this.registerEventListener(annotationBarCallbacks);
+        registerEventListener(annotationBarCallbacks, opts);
 
     }
 
-    private static registerEventListener(annotationBarCallbacks: AnnotationBarCallbacks) {
+    function registerEventListener(annotationBarCallbacks: AnnotationBarCallbacks,
+                                   opts: RegisterOpts) {
 
-        const target = document.getElementById("viewerContainer")!;
+        const handleTarget = (target: HTMLElement) => {
 
-        let annotationBar: HTMLElement | undefined;
+            let annotationBar: HTMLElement | undefined;
 
-        ActiveSelections.addEventListener(activeSelectionEvent => {
-
-            const pageElement = Elements.untilRoot(activeSelectionEvent.element, ".page");
-
-            if (! pageElement) {
-                log.warn("Not found within .page element");
-                return;
+            interface AnnotationPageInfo {
+                readonly pageNum: number;
+                /**
+                 * The container to hold the annotation bar.
+                 */
+                readonly popupContainer: HTMLElement;
             }
 
-            const pageNum = parseInt(pageElement.getAttribute("data-page-number"), 10);
+            ActiveSelections.addEventListener(activeSelectionEvent => {
 
-            switch (activeSelectionEvent.type) {
+                const computeAnnotationPageInfo = (): AnnotationPageInfo | undefined => {
 
-                case 'created':
-
-                    annotationBar = this.createAnnotationBar(pageNum,
-                                                             pageElement,
-                                                             annotationBarCallbacks,
-                                                             activeSelectionEvent);
-
-                    break;
-
-                case 'destroyed':
-
-                    if (annotationBar) {
-                        this.destroyAnnotationBar(annotationBar);
+                    function getPageNumberForPageElement(pageElement: HTMLElement) {
+                        return parseInt(pageElement.getAttribute("data-page-number")!, 10);
                     }
 
-                    break;
+                    const computeForPDF = (): AnnotationPageInfo | undefined => {
 
-            }
+                        const pageElement = Elements.untilRoot(activeSelectionEvent.element, ".page");
 
-            if (activeSelectionEvent.type === 'destroyed') {
-                // only created supported for now.
-                return;
-            }
+                        if (! pageElement) {
+                            // log.warn("Not found within .page element");
+                            return undefined;
+                        }
 
-        }, target);
+                        const pageNum = getPageNumberForPageElement(pageElement);
+
+                        return {popupContainer: pageElement, pageNum};
+
+                    };
+
+                    const computeForEPUB = (): AnnotationPageInfo | undefined => {
+
+                        const pageElement = window.parent.document.querySelector('.page') as HTMLElement;
+                        const pageNum = getPageNumberForPageElement(pageElement);
+                        return {popupContainer: target, pageNum};
+
+                    };
+
+                    switch (opts.fileType) {
+                        case "pdf":
+                            return computeForPDF();
+
+                        case "epub":
+                            return computeForEPUB();
+                    }
+
+                };
+
+                const annotationPageInfo = computeAnnotationPageInfo();
+
+                if (! annotationPageInfo) {
+                    return;
+                }
+
+                switch (activeSelectionEvent.type) {
+
+                    case 'created':
+
+                        annotationBar = createAnnotationBar(annotationPageInfo.pageNum,
+                                                            annotationPageInfo.popupContainer,
+                                                            annotationBarCallbacks,
+                                                            activeSelectionEvent);
+
+                        break;
+
+                    case 'destroyed':
+
+                        if (annotationBar) {
+                            destroyAnnotationBar(annotationBar);
+                        }
+
+                        break;
+
+                }
+
+                if (activeSelectionEvent.type === 'destroyed') {
+                    // only created supported for now.
+                    return;
+                }
+
+            }, target);
+        };
+
+        const targets = computeTargets(opts.fileType, opts.docViewerElementProvider);
+
+        for (const target of targets) {
+            handleTarget(target);
+        }
 
     }
 
-    private static destroyAnnotationBar(annotationBar: HTMLElement) {
+    function computeTargets(fileType: FileType, docViewerElementProvider: () => HTMLElement): ReadonlyArray<HTMLElement> {
+
+        const docViewerElement = docViewerElementProvider();
+
+        function computeTargetsForPDF(): ReadonlyArray<HTMLElement> {
+            return Array.from(docViewerElement.querySelectorAll(".page")) as HTMLElement[];
+        }
+
+        function computeTargetsForEPUB(): ReadonlyArray<HTMLElement> {
+            return Array.from(docViewerElement.querySelectorAll("iframe"))
+                        .map(iframe => iframe.contentDocument)
+                        .filter(contentDocument => isPresent(contentDocument))
+                        .map(contentDocument => contentDocument!)
+                        .map(contentDocument => contentDocument.documentElement)
+        }
+
+        switch(fileType) {
+
+            case "pdf":
+                return computeTargetsForPDF();
+
+            case "epub":
+                return computeTargetsForEPUB();
+
+        }
+
+    }
+
+    function destroyAnnotationBar(annotationBar: HTMLElement) {
 
         if (annotationBar && annotationBar.parentElement) {
             annotationBar.parentElement!.removeChild(annotationBar);
@@ -78,13 +167,13 @@ export class ControlledAnnotationBars {
 
     }
 
-    private static computePosition(pageElement: HTMLElement,
-                                   point: Point,
-                                   offset: Point | undefined): Point {
+    function computePosition(pageElement: HTMLElement,
+                             point: Point,
+                             offset: Point | undefined): Point {
 
-        const docFormat = DocFormatFactory.getInstance();
+        // const docFormat = DocFormatFactory.getInstance();
 
-        let origin: Point =
+        const origin: Point =
             Optional.of(pageElement.getBoundingClientRect())
                 .map(rect => {
                     return {'x': rect.left, 'y': rect.top};
@@ -92,9 +181,9 @@ export class ControlledAnnotationBars {
                 .get();
 
         // one off for the html viewer... I hope we can unify these one day.
-        if (docFormat.name === 'html') {
-            origin = {x: 0, y: 0};
-        }
+        // if (docFormat.name === 'html') {
+        //     origin = {x: 0, y: 0};
+        // }
 
         const relativePoint: Point =
             Points.relativeTo(origin, point);
@@ -111,10 +200,10 @@ export class ControlledAnnotationBars {
 
     }
 
-    private static createAnnotationBar(pageNum: number,
-                                       pageElement: HTMLElement,
-                                       annotationBarCallbacks: AnnotationBarCallbacks,
-                                       activeSelectionEvent: ActiveSelectionEvent) {
+    function createAnnotationBar(pageNum: number,
+                                 popupContainer: HTMLElement,
+                                 annotationBarCallbacks: AnnotationBarCallbacks,
+                                 activeSelectionEvent: ActiveSelectionEvent) {
 
         const point: Point = {
             x: activeSelectionEvent.boundingClientRect.left + (activeSelectionEvent.boundingClientRect.width / 2),
@@ -132,9 +221,10 @@ export class ControlledAnnotationBars {
         // TODO: we have to compute the position above or below based on the
         // direction of the mouse movement.
 
-        const position = this.computePosition(pageElement, point, offset);
+        const position = computePosition(popupContainer, point, offset);
 
         const annotationBar = document.createElement('div');
+        annotationBar.setAttribute("class", 'polar-annotation-bar');
 
         annotationBar.addEventListener('mouseup', (event) => event.stopPropagation());
         annotationBar.addEventListener('mousedown', (event) => event.stopPropagation());
@@ -142,13 +232,14 @@ export class ControlledAnnotationBars {
         const style = `position: absolute; top: ${position.y}px; left: ${position.x}px; z-index: 10000;`;
         annotationBar.setAttribute('style', style);
 
-        pageElement.insertBefore(annotationBar, pageElement.firstChild);
+        popupContainer.insertBefore(annotationBar, popupContainer.firstChild);
 
         const onHighlightedCallback = (highlightCreatedEvent: HighlightCreatedEvent) => {
             // TODO: there's a delay here and it might be nice to have a progress
             // bar until it completes.
             annotationBarCallbacks.onHighlighted(highlightCreatedEvent);
-            this.destroyAnnotationBar(annotationBar);
+            destroyAnnotationBar(annotationBar);
+
         };
 
         ReactDOM.render(

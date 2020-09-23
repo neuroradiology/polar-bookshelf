@@ -1,60 +1,64 @@
-import {RelatedTags} from './RelatedTags';
+import {RelatedTagsManager} from './RelatedTagsManager';
 import {assertJSON} from '../../test/Assertions';
+import {assert} from 'chai';
+import {Tags} from "polar-shared/src/tags/Tags";
 
 describe('RelatedTags', function() {
 
-    const getTagMetaIndex = (relatedTags: RelatedTags) => {
-        return (<any> relatedTags).tagMetaIndex;
+    const getTagDocsIndex = (relatedTags: RelatedTagsManager) => {
+        return (<any> relatedTags).tagDocsIndex;
     };
 
     it("basic", async function() {
 
-        const relatedTags = new RelatedTags();
+        const relatedTags = new RelatedTagsManager();
 
-        relatedTags.update('0x01', 'set', 'linux');
-        relatedTags.update('0x01', 'set', 'microsoft');
+        relatedTags.update('0x01', 'set', [Tags.create('linux')]);
+        relatedTags.update('0x01', 'set', [Tags.create('microsoft')]);
 
-        relatedTags.update('0x02', 'set', 'linux');
-        relatedTags.update('0x02', 'set', 'google');
+        relatedTags.update('0x02', 'set', [Tags.create('linux')]);
+        relatedTags.update('0x02', 'set', [Tags.create('google')]);
 
-        relatedTags.update('0x03', 'set', 'linux');
-        relatedTags.update('0x03', 'set', 'microsoft');
+        relatedTags.update('0x03', 'set', [Tags.create('linux')]);
+        relatedTags.update('0x03', 'set', [Tags.create('microsoft')]);
 
-        relatedTags.update('0x04', 'set', 'linux');
-        relatedTags.update('0x04', 'set', 'microsoft');
+        relatedTags.update('0x04', 'set', [Tags.create('linux')]);
+        relatedTags.update('0x04', 'set', [Tags.create('microsoft')]);
 
-        relatedTags.update('0x05', 'set', 'linux');
-        relatedTags.update('0x05', 'set', 'google');
+        relatedTags.update('0x05', 'set', [Tags.create('linux')]);
+        relatedTags.update('0x05', 'set', [Tags.create('google')]);
 
-        const tagMetaIndex = getTagMetaIndex(relatedTags);
+        const tagDocsIndex = getTagDocsIndex(relatedTags);
 
-        assertJSON(tagMetaIndex, {
-               "linux": {
-                   "tag": "linux",
-                   "docs": [
-                       "0x01",
-                       "0x02",
-                       "0x03",
-                       "0x04",
-                       "0x05"
-                   ]
-               },
-               "microsoft": {
-                   "tag": "microsoft",
-                   "docs": [
-                       "0x01",
-                       "0x03",
-                       "0x04"
-                   ]
-               },
-               "google": {
-                   "tag": "google",
-                   "docs": [
-                       "0x02",
-                       "0x05"
-                   ]
-               }
-           }, undefined, true);
+        assert.isDefined(tagDocsIndex);
+
+        assertJSON(tagDocsIndex, {
+            "linux": {
+                "tag": "linux",
+                "docs": {
+                    "0x01": true,
+                    "0x02": true,
+                    "0x03": true,
+                    "0x04": true,
+                    "0x05": true
+                }
+            },
+            "microsoft": {
+                "tag": "microsoft",
+                "docs": {
+                    "0x01": true,
+                    "0x03": true,
+                    "0x04": true
+                }
+            },
+            "google": {
+                "tag": "google",
+                "docs": {
+                    "0x02": true,
+                    "0x05": true
+                }
+            }
+        }, undefined, true);
 
         const tagHits = relatedTags.compute(['linux']);
 

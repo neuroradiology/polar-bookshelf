@@ -1,20 +1,22 @@
 /**
  * Represents a light weight reference to a DocMeta file.
  */
-import {IDocInfo} from '../metadata/DocInfo';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import {DocMeta} from '../metadata/DocMeta';
-import {Preconditions} from '../Preconditions';
-import {FileRef} from './Datastore';
+import {Preconditions} from 'polar-shared/src/Preconditions';
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
 
 export interface DocMetaRef {
 
     readonly fingerprint: string;
 
     /**
-     * Store the DocMeta if we're passing this directly but have already read
-     * the DocMeta elsewhere and it's not actually stale.
+     * A promise to the DocMeta.  If we're passing this directly the promise is
+     * already resolved and just a value, but, if we have at least the
+     * fingerprint or have a better reference we give a promise.
      */
-    readonly docMeta?: DocMeta;
+    readonly docMetaProvider?: () => Promise<IDocMeta>;
 
 }
 
@@ -35,9 +37,19 @@ export interface DocMetaFileRef extends DocMetaRef {
 
 export class DocMetaFileRefs {
 
-    public static createFromDocMeta(docMeta: DocMeta): DocMetaFileRef {
+    public static createFromDocMeta(docMeta: IDocMeta): DocMetaFileRef {
 
-        return this.createFromDocInfo(docMeta.docInfo);
+        const docInfo = docMeta.docInfo;
+
+        return {
+            fingerprint: docInfo.fingerprint,
+            docFile: {
+                name: docInfo.filename!,
+                hashcode: docInfo.hashcode
+            },
+            docInfo,
+            docMetaProvider: () => Promise.resolve(docMeta)
+        };
 
     }
 

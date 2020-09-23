@@ -12,8 +12,9 @@ rules:
   no-bitwise: true
   no-conditional-assignment: true
   no-consecutive-blank-lines: false
+  space-before-function-paren: false
   no-console:
-    severity: warning
+    severity: none
     options:
     - debug
     - info
@@ -86,6 +87,9 @@ rules:
   # but I find having to rename them more annoying and that these don't actually
   # cause bugs in production.
   no-shadowed-variable: false
+
+  # used to prevent unused imports and other variables.
+  no-unused-variable: true
 
 jsRules:
   max-line-length:

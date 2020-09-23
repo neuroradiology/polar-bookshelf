@@ -1,10 +1,9 @@
 import {ipcRenderer} from "electron";
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {TestResult} from './renderer/TestResult';
 import {IPCMessage} from '../../ipc/handler/IPCMessage';
-import {Optional} from '../../util/ts/Optional';
-import {Preconditions} from '../../Preconditions';
-import {app} from 'electron';
+import {Optional} from 'polar-shared/src/util/ts/Optional';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 
 const log = Logger.create();
 
@@ -23,7 +22,7 @@ export class TestResultService {
 
         Preconditions.assertPresent(ipcRenderer, "No ipcRenderer");
 
-        ipcRenderer.on('test-result', (event: Electron.Event, data: any) => {
+        ipcRenderer.on('test-result', (event, data: any) => {
 
             const ipcMessage = IPCMessage.create(data);
 
@@ -43,7 +42,7 @@ export class TestResultService {
 
     }
 
-    public onPing(event: Electron.Event, ipcMessage: IPCMessage<any>) {
+    public onPing(event: Electron.IpcRendererEvent, ipcMessage: IPCMessage<any>) {
 
         const pongMessage = new IPCMessage("pong", true);
 

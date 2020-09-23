@@ -1,16 +1,14 @@
 import {MainAppController} from './MainAppController';
 import {app, BrowserWindow, dialog, Menu, shell} from "electron";
-import {ElectronContextMenu} from '../../contextmenu/electron/ElectronContextMenu';
-import {Version} from '../../util/Version';
+import {Version} from 'polar-shared/src/util/Version';
 import {AppLauncher} from './AppLauncher';
-import {Logger} from '../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {Promises} from '../../util/Promises';
 import {Updates} from '../../updates/Updates';
-import {Platform, Platforms} from '../../util/Platforms';
-import {AnnotationSidebarClient} from '../../annotation_sidebar/AnnotationSidebarClient';
+import {Platform, Platforms} from 'polar-shared/src/util/Platforms';
 import {BrowserWindowRegistry} from '../../electron/framework/BrowserWindowRegistry';
 import {Menus} from './Menus';
-import {isPresent} from '../../Preconditions';
+import {isPresent} from 'polar-shared/src/Preconditions';
 import {Directories} from '../../datastore/Directories';
 import {Messenger} from '../../electron/messenger/Messenger';
 import {AppUpdates} from '../../updates/AppUpdates';
@@ -38,9 +36,6 @@ export class MainAppMenu {
 
         Menu.setApplicationMenu(menu);
 
-        // noinspection TsLint
-        new ElectronContextMenu();
-
         this.registerEventListeners();
 
     }
@@ -60,18 +55,6 @@ export class MainAppMenu {
                 meta!.tags[WINDOW_TYPE] === 'viewer';
 
             const menu = Menu.getApplicationMenu()!;
-
-            // **** handle toggle-annotation-sidebar
-
-            function handleToggleAnnotationSidebar() {
-                const viewMenu = Menus.find(menu.items, 'view');
-                const viewMenuItems = Menus.submenu(viewMenu);
-                const toggleAnnotationSidebar = Menus.find(viewMenuItems, 'toggle-annotation-sidebar');
-
-                Menus.setVisible(toggleAnnotationSidebar!, isViewer);
-            }
-
-            handleToggleAnnotationSidebar();
 
             // **** handle sync-flashcards-to-anki
 
@@ -121,7 +104,7 @@ export class MainAppMenu {
             menuTemplate.unshift(this.createMacOSMenuTemplate());
         }
 
-        return menuTemplate;
+        return menuTemplate.filter(current => current !== undefined);
 
     }
 
@@ -195,51 +178,46 @@ export class MainAppMenu {
 
         const isMacOS = Platforms.get() === Platform.MACOS;
 
+        if (isMacOS) {
+            return undefined;
+        }
+
         return {
             label: 'File',
             // accelerator: 'Ctrl+F',
             submenu: [
 
-                {
-                    label: 'Import from Disk',
-                    accelerator: 'CmdOrCtrl+I',
-                    click: () => {
-                        this.mainAppController.cmdImport()
-                            .catch((err: Error) => log.error("Could not import from disk: ", err));
-                    }
+                // {
+                //     label: 'Import from Disk',
+                //     accelerator: 'CmdOrCtrl+I',
+                //     click: () => {
+                //         this.mainAppController.cmdImport()
+                //             .catch((err: Error) => log.error("Could not import from disk: ", err));
+                //     }
+                //
+                // },
+                //
+                // {
+                //     type: 'separator'
+                // },
 
-                },
-                {
-                    label: 'Capture Web Page',
-                    accelerator: 'CommandOrControl+N',
-                    click: () => {
-                        this.mainAppController.cmdCaptureWebPageWithBrowser()
-                            .catch((err: Error) => log.error("Could not capture page: ", err));
-                    }
-
-                },
-
-                {
-                    type: 'separator'
-                },
-
-                {
-                    label: 'Print',
-                    accelerator: 'CmdOrCtrl+P',
-                    click: (item: Electron.MenuItem, focusedWindow: BrowserWindow) => {
-                        if (focusedWindow) {
-                            focusedWindow.webContents.print();
-                        }
-                    }
-                },
+                // {
+                //     label: 'Print',
+                //     accelerator: 'CmdOrCtrl+P',
+                //     click: (item: Electron.MenuItem, focusedWindow: BrowserWindow) => {
+                //         if (focusedWindow) {
+                //             focusedWindow.webContents.print();
+                //         }
+                //     }
+                // },
                 // { role: 'hide', visible: isMacOS },
                 // { role: 'hideOthers', visible: isMacOS },
                 // { role: 'unhide', visible: isMacOS },
                 // { type: 'separator', visible: isMacOS},
 
-                {
-                    type: 'separator'
-                },
+                // {
+                //     type: 'separator'
+                // },
                 {
                     role: 'quit',
                     label: 'Quit',
@@ -341,14 +319,6 @@ export class MainAppMenu {
                 // BrowserWindow) => { if (focusedWindow) {
                 // focusedWindow.setFullScreen(!focusedWindow.isFullScreen());
                 // } } },
-
-                {
-                    id: 'toggle-annotation-sidebar',
-                    accelerator: 'F10',
-                    label: 'Toggle Annotation Sidebar',
-                    visible: false,
-                    click: () => AnnotationSidebarClient.toggleAnnotationSidebar()
-                },
 
                 {
                     label: 'Toggle Full Screen',
@@ -469,7 +439,7 @@ export class MainAppMenu {
             message: this.createAboutMessage(),
             detail: '',
             // icon: APP_ICON
-        });
+        }).catch(err => log.error("Unable to show dialog: ", err));
 
     }
 
@@ -482,3 +452,4 @@ export enum MainMenuMode {
     DOC_REPO_APP,
     VIEWER_APP
 }
+

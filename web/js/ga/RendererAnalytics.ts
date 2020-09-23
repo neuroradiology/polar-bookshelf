@@ -1,36 +1,18 @@
 import ua, {EventParams} from 'universal-analytics';
-import {Logger} from '../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {CIDs} from './CIDs';
-import {Version} from '../util/Version';
-import {Stopwatch} from '../util/Stopwatch';
-import {TrackedDuration} from '../util/Stopwatch';
-import {Stopwatches} from '../util/Stopwatches';
-import {DurationMS} from '../util/TimeDurations';
+import {Stopwatch, TrackedDuration} from 'polar-shared/src/util/Stopwatch';
+import {Stopwatches} from 'polar-shared/src/util/Stopwatches';
+import {DurationMS} from 'polar-shared/src/util/TimeDurations';
+import {Analytics} from "../analytics/Analytics";
 
-// const TRACKING_ID = 'UA-122721184-1';
 const TRACKING_ID = 'UA-122721184-5';
 
 const DEBUG = false;
 
-const version = Version.get();
-
 declare var window: Window;
 
 const isBrowserContext = typeof window !== 'undefined';
-
-function getUserAgent() {
-
-    if (isBrowserContext && window && window.navigator) {
-        return window.navigator.userAgent;
-    }
-
-    return "none";
-
-}
-
-
-const userAgent = getUserAgent();
-
 const cid =  isBrowserContext ? CIDs.get() : 'none';
 
 const headers = {
@@ -61,7 +43,7 @@ export class RendererAnalytics {
     public static event(args: IEventArgs): void {
 
         if (! isBrowserContext) {
-            log.warn("Not called from browser context");
+            // log.warn("Not called from browser context");
             return;
         }
 
@@ -71,7 +53,7 @@ export class RendererAnalytics {
 
         // log.debug("Sending analytics event: ", args);
 
-        // FIXME: screenResolution (sr) and viewportSize (vp)
+        // TODO: screenResolution (sr) and viewportSize (vp)
         //
         // https://github.com/peaksandpies/universal-analytics/blob/master/AcceptableParams.md
 
@@ -81,8 +63,6 @@ export class RendererAnalytics {
         const eventParams: EventParams = {
             ec: args.category,
             ea: args.action,
-            el: args.label,
-            ev: args.value,
             // ua: userAgent,
             // av: version
         };
@@ -106,8 +86,40 @@ export class RendererAnalytics {
 
         log.info("Created pageview for: ", { path, hostname, title });
 
-        RendererAnalytics.pageview(path, hostname, document.title);
+        Analytics.page(path);
 
+    }
+
+    /**
+     * https://support.google.com/analytics/answer/3123666?hl=en
+     *
+     * https://support.google.com/analytics/answer/3123662?hl=en&utm_id=ad
+     *
+     * You must make sure you have the full rights to use this service, to upload data, and to use it with your Google
+     * Analytics account.
+     *
+     * You will give your end users proper notice about the implementations and features of Google Analytics you use
+     * (e.g. notice about what data you will collect via Google Analytics, and whether this data can be connected to
+     * other data you have about the end user). You will either get consent from your end users, or provide them with
+     * the opportunity to opt-out from the implementations and features you use.
+     *
+     * You will not upload any data that allows Google to personally identify an individual (such as certain names,
+     * social security numbers, email addresses, or any similar data), or data that permanently identifies a particular
+     * device (such as a mobile phone’s unique device identifier if such an identifier cannot be reset).
+     *
+     * If you upload any data that allows Google to personally identify an individual, your Google Analytics account can
+     * be terminated, and you may lose your Google Analytics data.
+     *
+     * You will only session stitch authenticated and unauthenticated sessions of your end users if your end users have
+     * given consent to such stitch, or if such merger is allowed under applicable laws and regulations.
+     *
+     * ga('set', 'userId', 'USER_ID');
+     *
+     * Set the user ID using signed-in user_id.
+     *
+     */
+    public static identify(uid: string) {
+        visitor.set('userId', uid);
     }
 
     public static pageview(path: string, hostname?: string, title?: string): void {
@@ -214,10 +226,6 @@ export class RendererAnalytics {
 export interface IEventArgs {
     category: string;
     action: string;
-    label?: string;
-    value?: number;
-    nonInteraction?: boolean;
-    transport?: string;
 }
 
 export interface IFieldsObject {
@@ -273,7 +281,9 @@ class DefaultTimer implements Timer {
     }
 
     private doAnalytics(duration: TrackedDuration) {
-        RendererAnalytics.timing(this.category, this.variable, duration.durationMS);
+        if (navigator.onLine) {
+            RendererAnalytics.timing(this.category, this.variable, duration.durationMS);
+        }
     }
 
     private doLogging(duration: TrackedDuration) {

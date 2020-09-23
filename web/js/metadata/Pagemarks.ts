@@ -1,26 +1,28 @@
 import {PagemarkRect} from './PagemarkRect';
-import {Pagemark, PagemarkRef} from './Pagemark';
-import {Logger} from '../logger/Logger';
-import {Hashcodes} from '../Hashcodes';
-import {Objects} from '../util/Objects';
-import {PagemarkType} from './PagemarkType';
+import {Pagemark} from './Pagemark';
+import {Logger} from 'polar-shared/src/logger/Logger';
+import {Hashcodes} from 'polar-shared/src/util/Hashcodes';
+import {PagemarkType} from 'polar-shared/src/metadata/PagemarkType';
 import {PagemarkRects} from './PagemarkRects';
-import {Dictionaries} from '../util/Dictionaries';
-import {round} from '../util/Percentages';
-import {PagemarkMode} from './PagemarkMode';
-import {DocMeta} from './DocMeta';
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
+import {Percentage100, Percentages, round} from 'polar-shared/src/util/Percentages';
+import {PagemarkMode} from 'polar-shared/src/metadata/PagemarkMode';
 import {DocMetas} from './DocMetas';
-import {isPresent, Preconditions} from '../Preconditions';
-import {ISODateTimeString, ISODateTimeStrings} from './ISODateTimeStrings';
-import {PageMeta, PageNumber} from './PageMeta';
-import {Numbers} from "../util/Numbers";
-import {Reducers} from '../util/Reducers';
-import {ProgressByMode, ReadingProgress} from './ReadingProgress';
+import {isPresent, Preconditions} from 'polar-shared/src/Preconditions';
+import {ISODateTimeString, ISODateTimeStrings} from 'polar-shared/src/metadata/ISODateTimeStrings';
+import {Reducers} from 'polar-shared/src/util/Reducers';
 import {ReadingProgresses} from './ReadingProgresses';
-import {Provider} from '../util/Providers';
-import {HitMap} from '../util/HitMap';
+import {Provider} from 'polar-shared/src/util/Providers';
+import {HitMap} from 'polar-shared/src/util/HitMap';
 import {ReadingOverviews} from './ReadingOverviews';
-import {Percentage} from '../util/ProgressTracker';
+import {IPageMeta, PageNumber} from "polar-shared/src/metadata/IPageMeta";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {IPagemark} from "polar-shared/src/metadata/IPagemark";
+import {Numbers} from "polar-shared/src/util/Numbers";
+import {Objects} from "polar-shared/src/util/Objects";
+import {ExtendPagemark} from "polar-pagemarks-auto/src/AutoPagemarker";
+import { IPagemarkRef } from 'polar-shared/src/metadata/IPagemarkRef';
+import {IDStr} from "polar-shared/src/util/Strings";
 
 const log = Logger.create();
 
@@ -30,6 +32,11 @@ const DEFAULT_PAGEMARK_RECT = new PagemarkRect({
     width: 100,
     height: 100
 });
+
+export interface UpdatePagemarksForRangeOpts {
+    readonly start?: PageNumber;
+    readonly batch?: IDStr;
+}
 
 export class Pagemarks {
 
@@ -42,22 +49,34 @@ export class Pagemarks {
         return Hashcodes.createID({created, sequence: this.sequences.id++});
     }
 
+    public static createExtender(docMeta: IDocMeta) {
+
+        return (extendPagemark: ExtendPagemark) => {
+            Pagemarks.updatePagemarksForRange(docMeta, extendPagemark.page, 100, {start: extendPagemark.origin});
+        };
+
+    }
+
     /**
      * Create pagemarks over the given range.  We go back to either the first
      * page that has a pagemark or the beginning of the document.
      *
+     * @param docMeta
+     * @param end
      * @param percentage The percentage of the end page to create a pagemark.
+     * @param opts options for creating the pagemarks.
      */
-    public static updatePagemarksForRange(docMeta: DocMeta,
+    public static updatePagemarksForRange(docMeta: IDocMeta,
                                           end: PageNumber,
-                                          percentage: number = 100 ): ReadonlyArray<PagemarkRef> {
+                                          percentage: Percentage100 = 100,
+                                          opts: UpdatePagemarksForRangeOpts = {}): ReadonlyArray<IPagemarkRef> {
 
         if (end < 1) {
             throw new Error("Page number must be 1 or more");
         }
 
         const created = ISODateTimeStrings.create();
-        const batch = Hashcodes.createID({created, id: this.sequences.batch++});
+        const batch = opts.batch || Hashcodes.createID({created, id: this.sequences.batch++});
 
         const calculateStartPage = () => {
 
@@ -134,9 +153,9 @@ export class Pagemarks {
 
         };
 
-        const start = calculateStartPage();
+        const start = opts.start || calculateStartPage();
 
-        const result: PagemarkRef[] = [];
+        const result: IPagemarkRef[] = [];
 
         DocMetas.withBatchedMutations(docMeta, () => {
 
@@ -217,15 +236,22 @@ export class Pagemarks {
 
         const mode = options.mode || PagemarkMode.READ;
 
+        const id = Pagemarks.createID(created);
         return new Pagemark({
 
             // per-pagemark fields.
-            id: Pagemarks.createID(created),
+            id,
+            guid: id,
             created,
 
             // the rest are from options.
             type: options.type,
-            percentage: keyOptions.percentage,
+
+            // do NOT math.floor this.  It causes issues when percentages are
+            // less than 1 and for large pages the small changes can make a
+            // difference in pagemark placement
+            percentage: Numbers.toFixedFloat(keyOptions.percentage, 10),
+
             column: options.column,
             rect: keyOptions.rect,
             batch,
@@ -319,9 +345,12 @@ export class Pagemarks {
     /**
      * Update pagemarks on the given page.
      *
-     * @param pagemark The pagemark to update.
      */
-    public static updatePagemark(docMeta: DocMeta, pageNum: number, pagemark: Pagemark) {
+    public static updatePagemark(docMeta: IDocMeta,
+                                 pageNum: number,
+                                 pagemark: IPagemark) {
+
+        pagemark.lastUpdated = ISODateTimeStrings.create();
 
         this.doDocMetaMutation(docMeta, pageNum, () => {
             const pageMeta = DocMetas.getPageMeta(docMeta, pageNum);
@@ -338,7 +367,7 @@ export class Pagemarks {
      * Replace the pagemarks with a new pagemark with the given options
      * replaced.
      */
-    public static replacePagemark(docMeta: DocMeta,
+    public static replacePagemark(docMeta: IDocMeta,
                                   pagemarkPtr: PagemarkPTR,
                                   options: ReplacePagemarkOptions) {
 
@@ -395,11 +424,12 @@ export class Pagemarks {
     }
 
     /**
-     *
+     * @param docMeta The DocMeta to update
+     * @param pageNum: The page number to update.
      * @param id When id is specified we delete just a specific pagemark,
      * otherwise we delete all of them.
      */
-    public static deletePagemark(docMeta: DocMeta, pageNum: number, id?: string) {
+    public static deletePagemark(docMeta: IDocMeta, pageNum: PageNumber, id?: string) {
 
         this.doDocMetaMutation(docMeta, pageNum, () => {
 
@@ -453,7 +483,7 @@ export class Pagemarks {
     /**
      * Scan all the pagemarks finding ones with the same batch.
      */
-    private static pagemarksWithinBatch(docMeta: DocMeta, batch: string): ReadonlyArray<PagemarkPageMetaRef> {
+    private static pagemarksWithinBatch(docMeta: IDocMeta, batch: string): ReadonlyArray<PagemarkPageMetaRef> {
 
         const result = [];
 
@@ -476,7 +506,7 @@ export class Pagemarks {
 
     }
 
-    private static doDocMetaMutation(docMeta: DocMeta,
+    private static doDocMetaMutation(docMeta: IDocMeta,
                                      pageNum: number,
                                      pagemarkMutator: () => void): void {
 
@@ -500,7 +530,7 @@ export class Pagemarks {
     /**
      * Mutate the pagemarks on the PageMeta and also update the readingProgress
      */
-    private static doPageMetaMutation(pageMeta: PageMeta, pageMetaMutator?: VOID_FUNCTION): void {
+    private static doPageMetaMutation(pageMeta: IPageMeta, pageMetaMutator?: VOID_FUNCTION): void {
 
         if (! pageMetaMutator) {
             return;
@@ -521,9 +551,10 @@ export class Pagemarks {
 
         const writeReadingProgress = (preExisting?: boolean) => {
 
-            const progress = Object.values(pageMeta.pagemarks)
-                .map(current => current.percentage)
-                .reduce(Reducers.SUM, 0);
+            const percentages = Object.values(pageMeta.pagemarks)
+                .map(current => current.percentage);
+
+            const progress = Percentages.sum(...percentages);
 
             const progressByMode = createProgressByMode();
 
@@ -547,7 +578,7 @@ export class Pagemarks {
 
     }
 
-    public static computeReadingProgressStats(docMetaProviders: ReadonlyArray<Provider<DocMeta>>) {
+    public static computeReadingProgressStats(docMetaProviders: ReadonlyArray<Provider<IDocMeta>>) {
 
         // TODO: we don't ahve the pageMeta here so maybe we could just write
         // out a minimal vector of day + number of the number of pages we've
@@ -566,7 +597,7 @@ export class Pagemarks {
 }
 
 interface PagemarkPageMetaRef {
-    readonly pageMeta: PageMeta;
+    readonly pageMeta: IPageMeta;
     readonly id: string;
 
 }
@@ -601,7 +632,7 @@ export interface PagemarkOptions {
  */
 export interface PagemarkPTR {
 
-    readonly ref?: PagemarkRef;
+    readonly ref?: IPagemarkRef;
 
     readonly batch?: string;
 

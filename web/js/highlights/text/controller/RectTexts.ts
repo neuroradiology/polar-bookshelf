@@ -1,54 +1,39 @@
-import {Point} from '../../../Point';
 import {Rect} from '../../../Rect';
-import {Objects} from '../../../util/Objects';
-import {Rects} from '../../../Rects';
 import {RectText} from './RectText';
 import {TextNodes} from '../selection/TextNodes';
 
 export class RectTexts {
 
-    /**
-     *
-     * @param textNodes
-     */
-    public static toRectTexts(textNodes: Node[]) {
+    public static toRectTexts(textNodes: ReadonlyArray<Node>): ReadonlyArray<RectText> {
+
+        function predicate(current: RectText) {
+            return current.boundingClientRect.width > 0 && current.boundingClientRect.height > 0;
+        }
+
         return textNodes.map(RectTexts.toRectText)
-                        .filter(current => current.boundingPageRect.width > 0 && current.boundingPageRect.height > 0);
+                        .filter(predicate);
     }
 
     /**
      * Take a Node of type TEXT and build a RectText including the the text,
      * the rects, etc.
-     *
-     * @param textNode {Node}
-     * @return {RectText}
      */
-    public static toRectText(textNode: Node) {
+    public static toRectText(textNode: Node): RectText {
 
         const range = TextNodes.getRange(textNode);
 
-        // FIXME: this is wrong and we are using teh wrong scroll position.
-
         const win = textNode.ownerDocument!.defaultView!;
 
-        const scrollPoint = new Point({
-            x: win.scrollX,
-            y: win.scrollY
-        });
+        const selectionRange = win.getSelection()!.getRangeAt(0).getBoundingClientRect();
 
-        const boundingClientRect = range.getBoundingClientRect();
+        const boundingClientRect = new Rect(range.getBoundingClientRect());
 
-        // FIXMEL this is the bug because it copies toJSON
-        let boundingPageRect = Rects.validate(boundingClientRect);
-
-        boundingPageRect = Rects.relativeTo(scrollPoint, boundingPageRect);
-
-        return new RectText({
-            clientRects: range.getClientRects(),
+        return {
+            // clientRects: range.getClientRects(),
+            selectionRange,
             boundingClientRect,
-            boundingPageRect,
-            text: textNode.textContent
-        });
+            text: textNode.textContent || undefined
+        };
 
     }
 

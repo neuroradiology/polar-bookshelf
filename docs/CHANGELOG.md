@@ -1,8 +1,597 @@
+- disable context menus on context menus
 
+# 2.0 beta 26
+
+- Fixed bug with the first character of tabs being ignored
+- Migration code for legacy PHZ documents should be enabled/working
+- Fixed bug where the chrome extension wasn't being detected
+- Fixed bug with keyboard binding on input elements
+- Fixed bug with attempting to use chrome API on electron.
+- Improved pricing page (but not done yet)
+- Faster UI for dialogs
+- Doc repo only allows regular tags now.
+
+# 2.0 beta 25
+
+- remove archive option from annotations since it makes no sense
+- Fixed key bindings and no longer using react-hotkeys.
+
+# 2.0 beta 24
+
+- another big performance change
+
+# 2.0 beta 23
+
+- Improved performance of the PDF doc viewer.  Not all the performance updates
+  I want though but getting better 
+
+# 2.0 beta 22
+
+- Fixed jumping to epub pagemarks
+- Updated doc viewer menu with better menu entry names
+- EPUB search next,prev works now
+- PDF document scroll page number detection works now...
+- Options (tags) are sorted in options now in the autocomplete dialog
+- No folders when tagging annotations now 
+
+# 2.0 beta 21
+
+- fixed bug with annotation repo store where it wasn't updating immediately.
+
+- tags for annotations now work
+
+- chrome extension now shows a dialog box when we're uploading a PDF
+
+- New modal progress upload widget for when the user MUST wait for the document
+  to upload when using the save to polar chrome extension.
+
+- Fix to prevent being able to create an autocompleted tag twice.
+
+# 2.0 beta 20
+
+- stale updates are now ignored in the doc repo so that we don't have races
+  in the updating of the UI
+
+- refactored code to make refreshing the UI faster
+
+- the account control can now dismiss the popper so that when you click on 
+  'pricing' it goes away.
+
+- rewrote the way we handle EPUB highlights and search hit placement to be a lot
+  more reliable.
+
+- logout now works again properly
+
+- single delete button for comments
+
+# 2.0 beta 19
+
+- Fix: wrapping issues with Safari
+
+- Fix: we can now remove documents from the archive again.
+
+- Fix: doc repo archives are much faster as we refresh the in-memory store first
+
+- Fix: PDF dark mode note enabled for light mode
+
+- Feature: Can now tag from within the doc viewer
+
+- Fix: Fixed EPUB jump in the doc viewer when opening up new documents
+
+- Fix: Fixed ctrl+f on Windows
+
+# 2.0 beta 18
+
+- Fixed bug where unicode characters are 'too long' when detecting if they are
+  whitespace.
+
+- Fixed bug with annotation jumps that would break PDF and cause it to shift
+  while working with text highlights.
+
+- EPUBs can now jump to the most recent reading position in the context menu.
+
+- Pagemark mode can now be set properly
+
+- Fixed bug in epub when changing pages.
+
+# 2.0 beta 17
+
+ - Fixed bug where EPUB pagemarks would not render properly when the browser
+   window was resized.
+
+ - improved UI spacing
+
+ - Fixed bug where we would sometimes handle the wrong range and log an 
+   exception and break the UI
+
+ - Fixed bug where EPUB pagemarks would snap to the wrong position.  
+
+ - primary call to action buttons (add document, start review) are longer
+   per figma spec
+   
+ - flag and archive buttons are now in the doc viewer (tag will come next)
+
+##
+
+- EPUB files can now be uploaded again
+- Title for uploaded document is truncated
+- You can now find text in epub documents that you're reading
+- Fixed bug with PDF where you could no longer create area highlights.
+- Context menu for folders working again.
+
+# ...
+
+- upgraded to latest version of typescript and tslint
+- annotations in the annotation viewer can now be rich text.
+- new state listener for the connection to firebase so we can debug when it 
+  disconnects/connects
+
+# 1.100.0
+
+- annotations in the annotation view are now sorted by 'last updated' not the
+  creation time.  
+- annotations can have tags
+- latest version of react-select 
+
+# 1.90.18
+
+- Sentry is now disabled as it was breaking windows builds.
+- Flow for the annotation sidebar now fixes the header at the top and 
+  properly sets overflow so just the sidebar text flows. 
+- Short term workaround for a bug where firebase won't write to prefs on 
+  startup which blocked cloud sync on restart for some users.
+- Upgraded to latest Firebase libraries (7.7.0)
+- Fixed bug with spacing in the tree sidebar for nodes that get compressed.
+- Ability to filter annotations on the sidebar.
+- Fixed bug with performing reviews when nothing left was available.
+- Fixed bug with #? not being encoded properly due when creating file URLs.
+
+# 1.90.0
+
+- Suggestions and net promoter score disabled for now as users were complaining
+  that it was asking too often. We're going to disable this until we can make
+  sure that users are only asked once per month at most. 
+- significant improvements with mobile apps and spaced repetition
+- Fixed bug with safari not rendering the top left folder filters...
+
+
+# 1.80.29
+
+- "Copy clipboard" from logs now pretty prints the JSON args
+- Reworked flashcard app so the flashcards now look like real flashcards.
+- Animations now work with the sidebar properly
+- Navigations now work on tablet and phone with routes
+- Reworked routes so that they're cached + faster plus work with nav
+- Fixed bad bug with authentication and Google auth bringing up external URL window/prompts
+
+# 1.80.10
+
+- Fixed bug with flashcard entry where the wrong field was used.
+- Fixed layout for sidebar and main content.
+- Fixed Electron 7.0 distribution issue.
+
+# 1.80.0
+
+- Fixed bug with tablets now showing the pricing plan
+
+- removed outline on MacOS for tree nodes on the sidebar.
+
+- Dramatically improved our mobile and tablet apps.
+
+- Fixed bug where PHZ files were breaking with iframes that were invalid.
+
+- Changed #annotations and #stats URLs so that they are /annotations and /stats 
+  as we're going to migrate to anchors for sub-screens for history.
+
+- Fixed privacy policy URL in login page
+
+- Tags can now contain spaces and hyphens
+
+- Semaphore now used for Windows disk writes.
+
+- Removed some unused libraries
+
+- Upgrades to latest firebase
+
+# 1.70.4
+
+## Features
+
+- Fix for Google authentication issues due to exposing Electron in User Agent and confused
+  Google.
+
+- Migration to Electron 7.1.4
+
+- Flagged items are now bold.
+
+- odd/even coloring in the document list / table.
+
+- usability: the sidebar has been significantly redesigned
+    - "+" button for adding tags and folders
+    - context menu for adding tags and folders
+    - remove tag from docs
+
+- usability: expand/collapse of folders now works now. 
+
+- UI: better UI filter control.
+
+- usability: you can now see the folders a file is within in the document repository
+
+- usability: you can now export annotations from the annotations view.
+
+- usability: double click of comments or flashcards edits them.
+
+## Fixes
+
+- Reading and review for older items would fail due to schema changes.
+
+- ChromeOS is now a desktop platform
+
+- Upgrade account button now works.  
+
+- Improved text in suggestions dialog.
+
+- The user suggestions dialog is centered.
+
+- usability: Fixed an issue where if the user accidentally hit 'r' the document would rotate and people
+  couldn't figure out how to revert.
+
+# 1.60.11
+
+## Features
+
+- The sidebar now doesn't show the color for the buttons unless you hover over them.  The colors 
+  are also more muted to help not distract more when using the annotation sidebar. 
+
+- Flashcards stats in the mobile app
+
+- Ability to revise the text of a text highlight.
+
+- Big refactor of the context menu so that range selection and context menus work properly. 
+
+- Ability to remove items from folders via right click
+
+- Multi-selection for deletes implemented
+
+- Deleting multiple items via context menu now works
+
+- Bronze now officially required for reading stats and recommended tags
+
+- The context menus now have icons 
+
+- Major refactor of how text selection works using the new modern text layer code in pdf.js which has 
+  been a major complaint since 1.0.  Excited to finally have this fixed!
+
+## Fixes
+
+- Fixed bug where sometimes exceptions were swallowed
+
+- Updated Firebase to hopefully fix some bugs with latency and exceptions..
+
+- Fixed delete dialogs as they were using older code...
+
+- Merged branch for image optimization.
+
+- Fixed alignment of headers in the doc repo
+
+- Fixed bad bug with stats for spaced repetition queue not being computed accurately.
+
+- Improved performance of doc table when selecting items.
+
+- The document repository view is now much faster and context menus no longer have a 'gap'
+  which wouldn't trigger the menu. 
+  
+- Now using larger buttons in the UI 
+
+- Show the front + back of cards when we 'show answer'
+
+# 1.50.10
+
+- Statistics now shown for flashcards when the user is using spaced repetition 
+
+- No more hamburger menu in the sidebar.  All options are now flat in the desktop UI and more discoverable.
+
+- Using proper MacOS system font along with Robot everywhere else including android devices.  
+
+- New documentation rework and will be improving this long term.
+
+- Added two more colors to the annotation bar. Was frequently requested by our users so just added it.
+
+- Flashcards now inherit the text of the annotation when being created to avoid double copy / pasting of text.
+
+- Mobile now a supported platform and designed for spaced repetition.  This will get us moving on mobile until
+  we can build out a real/full reading platform there.
+
+- The header and footer in the doc repo is fixed now and don't move as you scroll. 
+
+- Fixed bug with drag and drop and working with items from the second page of results.
+
+- Flashcard reviewer now integrated along with our normal spaced repetition.
+ 
+- Annotation reviewer spaced repetition system finally integrated into Polar
+
+- More work on mobile including disabling some features when using the app.
+
+- Active filters are now light blue so that users know they have filters enabled.
+
+- Color and annotation type filters now work.
+
+- Fixed bug with the root folders having the wrong counts
+
+# 1.40.1
+
+- the dropdowns were broken and appearing off screen which is now fixed.
+
+- highlights in the annotation view have colors again.
+
+# 1.40.0
+
+- upgraded to the latest version of Typescript
+
+- Fixed bug related to authentication and some accounts that would break when trying 
+  to login and this would fail intermittently.
+
+- It's now possible to drag documents from the document repository into the sidebar 
+  on tags and folders.
+
+- Upgraded to latest version of firebase
+
+- We now have 'Folders' and 'Tags' in the sidebar.
+
+- It's not possible to display tags in the sidebar and select them. 
+
+- Fixed about 250 errors with npm audit as 'npm' itself somehow became a dependency.
+
+- upgrade jszip 
+
+- Upgraded to pdfjs-dist 2.2.228  
+
+# 1.32.48
+
+- Fixed bug with polar not working when disconnected from the Internet.
+
+- Improved issue with markdown exports and text
+
+- Big upgrade of dependencies.  firebase and pdf.js
+
+- Actually fixed the sidebar stall loading bug.  Wasn't actually fixed. 
+
+# 1.32.13
+
+- Polar site now has SEO metadata for linked pages.  
+
+- cleanup of dependencies to avoid security issues.
+
+- Migrating to lerna for module management.  Things aren't perfect yet and version 
+  numbers might have gaps from here on out. 
+
+- Fixed a bad bug which caused the sidebar to continually reload over and over again. 
+  We can still make it faster by using pure components I think.
+
+# 1.32.1
+
+- Better name for the root node (Documents and Annotations)
+
+- URL nav should work in android now...
+
+# 1.32.0
+
+- Fixed a bug that prevented mobile working properly.
+
+- Fixed wrap in dropdown buttons.
+
+- Fixed a bug with the MessageBox modal where the background wasn't inherited 
+  and the zIndex was wrong.
+
+- Rewrite of URL handling so that /groups are real URLs not hash URLs.
+
+- Fixed bug with overflow handling and the app not properly using scrollbars.
+
+# 1.31.1
+
+- /groups doesn't require auth now... auth is only triggered when you try to add
+  a document or create a group.
+
+# 1.31.0
+
+- Suggest that Anki users install the appropriate model names instead of a  
+  generic error.
+
+- Initial version of polar public groups.  This is just a minimally viable
+  release to test out new features and get user feedback.  There's still a lot
+  left to do.
+
+# 1.30.8 
+
+- Small bug when dealing with account upgrades not allowing current plans to work.
+
+# 1.30.7 
+
+- Support for yearly payment plans
+
+# 1.30.6 
+
+- Users are required to upgrade now.  We won't allow more documents to be added
+  to the repository otherwise.
+
+# 1.30.5
+
+- Telling the user that their account will now be disabled
+
+- Analytics for adding documents...
+
+# 1.30.4
+
+- fixed bug with returning undefined values of profiles that lack metadata
+
+# 1.30.2
+
+- ability to handle add document requests from a URL
+
+# 1.30.1
+
+- Encourage users of free to go with Polar Premium...
+
+- Fixed bug with archive and flag not working.
+
+- Upgrade to Electron 5.0.6...
+
+- Fixed security dependency issue with lodash.
+
+# 1.30.0
+
+- Group sharing support added to Polar. You can now directly share documents 
+  with other users.
+
+# 1.20.0
+
+- Forcing upgrades for users using large amounts of cloud storage.  
+
+- Implementation of folders now.
+
+# 1.19.9
+
+- Fixed small bug where a pagemark with zero percent says that it 
+  'has no percentage' but this is because zero is false and very misleading. 
+  I have to be more careful of that bug.
+
+# 1.19.8
+
+- New payment system for Polar premium
+
+- Fixed bug when dragging area highlights.
+
+- Fixed regression in the webapp where PHZ files couldn't be loaded.
+
+# 1.19.7
+
+- Fixed a potential sync issue where the cache could become inconsistent and 
+  polar would attempt to perform a read on a document that really doesn't exist.
+  
+  Now we just yield a warning.
+
+- Better handling of uppercase filenames now.
+
+- Fixed bug in htmlviewer where the sandbox was breaking doc loading.
+
+- Fixed an issue with polar on linux not resolving symlinks properly on startup.
+
+- JSON is now represented without spacing to cut storage costs in half and speed
+  up writes.  
+
+- Update to latest interactjs
+
+- Datastore 'overview' now works on Firebase and syncs up with cloud aware 
+  datastore properly I think.
+
+# 1.19.6
+
+- Fixed typo with "Appendix"
+
+- More aggressive prompting for suggestions but only 1x per week now.
+
+- new clipboard cleanser for properly handling the clipboard when pasting from 
+  part of the PDF.  The handling is not yet perfect but we're making steps in 
+  that direction at least.
+
+- Fixed bug with highlights vanishing when colors were changed
+
+- Fixed bugs with .debs 
+
+# 1.19.5
+
+- Fixes some bugs with snaps
+
+# 1.19.4
+
+- we are now prompting the user for suggestions on how to fix polar.
+
+- unique machines code properly merged 
+
+- enable snap distribution again. 
+
+# 1.19.3
+
+- Using a border around the selected item in the annotation view not a background
+
+- Fixed bug with the percentages being slightly off and causing issues being 
+  greater than 100%
+
+- Fixed a small performance issue with N writes during write() which also means
+  we increase performance but lower Firebase costs.
+
+- Fixed bug with formatting being selected and part of the form being selected 
+  when double clicking in comments.
+  
+# 1.19.2
+
+- Fixed bug with deletes not working. I need to get automated testing setup!
+
+# 1.19.1
+
+- fixed a CSS issue with the dock
+
+- Fixed a bad bug where comments and flashcards wouldn't reload in the sidebar.
+
+- set a max height for the background resizer and don't allow it to go crazy
+  resizing itself forever.
+
+- annotation sidebar is resizeable now
+
+- proper capture of iframes now
+
+- upgrade to latest jsdom
+
+- 'Delete' char now works to delete one or multiple docs and you're prompted to
+  confirm.
+
+- Fixed bug where the PDF page size yielded an incorrect placement of the area 
+  highlight.
+
+- The left side dock in the annotation view is now resizeable.
+
+# 1.19.0
+
+- Fixed major performance issue when creating lots of annotations.
+
+- New color picker with advanced colors for highlights.
+
+- Fixed bug where capture would not remove noscript elements and would mangle 
+  the UI.
+  
+- Dropdowns are faster now due to no delay.
+
+- Fixed bug with pagemarks < 1%   
+
+- Upgrade to Electron 5.0.1
+
+- Fixed bug with mouse up when using iframes.
+
+- Area highlights now supported
+
+- Updated annotation view which is more usable and allows you to work with your 
+  notes and annotations more directly including better filtering and UI.
+
+- Polar chrome extension no longer handles PDFs by default.  We will have to 
+  keep this functionality disabled until we can embed the entire web app 
+  within the chrome extension but this is a difficult task for now.
 
 # 1.18.1
 
-- upgraded to latest firebase versions
+- new component to ScrollIntoView so that when we're dealing with scrollable 
+  and long form content we can make sure the content and scrolled and viewable. 
+
+- New handling for scrolling so that documents with slight overflow don't shift
+  on us.
+
+- Fixed bug where capture would fail because load was 'aborted' but it really
+  doesn't matter as we're just triggering load and it's up to the user if they
+  want to capture.
+
+- Polar chrome extension now part of main polar repo for better support and 
+  faster iteration.
+
+- Upgraded to latest firebase versions
 
 - cleanup orphan javascript
 

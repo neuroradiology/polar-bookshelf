@@ -1,22 +1,10 @@
-/**
- *
- */
 import {Rect} from '../../../Rect';
 
-export class RectText {
+export interface RectText {
 
-    public readonly text: string;
-    public readonly clientRects: Rect;
-    public readonly boundingClientRect: Rect;
-    public readonly boundingPageRect: Rect;
-
-    constructor(obj: any) {
-
-        this.text = obj.text;
-        this.clientRects = obj.clientRects;
-        this.boundingClientRect = obj.boundingClientRect;
-        this.boundingPageRect = obj.boundingPageRect;
-
-    }
-
+    readonly selectionRange: DOMRect;
+    readonly text: string | undefined;
+    readonly boundingClientRect: Rect;
+    // readonly boundingPageRect: Rect;
 }
+

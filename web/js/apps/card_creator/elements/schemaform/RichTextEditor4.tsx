@@ -1,13 +1,10 @@
-/**
- * This is our main widget for handling text fields which are HTML.
- */
-import ReactSummernote from './ReactSummernote';
 import React from 'react';
 import {TypedWidgetProps} from './TypedWidgetProps';
-import {Logger} from '../../../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {ReactSummernote4} from './ReactSummernote4';
-import {NULL_FUNCTION} from '../../../../util/Functions';
+import {NULL_FUNCTION} from 'polar-shared/src/util/Functions';
 import {RichTextMutator} from './RichTextMutator';
+
 const log = Logger.create();
 
 /**
@@ -16,8 +13,6 @@ const log = Logger.create();
 export class RichTextEditor4 extends React.Component<IProps, IState>  {
 
     private readonly typedWidgetProps: TypedWidgetProps;
-
-    private value: string = "";
 
     private id: string;
 
@@ -30,12 +25,6 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
             throw new Error("No ID");
         }
 
-        this.typedWidgetProps = new TypedWidgetProps(props);
-
-        if (this.typedWidgetProps.value) {
-            this.value = this.typedWidgetProps.value;
-        }
-
         // needed because React changes 'this' to the Element it created which
         // is a bit confusing.
         this.onChange = this.onChange.bind(this);
@@ -43,19 +32,22 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
         this.onBlur = this.onBlur.bind(this);
         this.onFocus = this.onFocus.bind(this);
 
+        this.typedWidgetProps = new TypedWidgetProps(props);
+
+        this.state = {
+            value: this.typedWidgetProps.value || ''
+        };
+
+
     }
 
-    // FIXME: there is an errorSchema here too which I might want to look at.
     private onChange(newValue: string) {
-
-        // FIXME: summernote has isEmpty and some other methods I need to use
-        // here.
 
         // console.log('onChange: newValue: ', newValue);
 
         // log.debug('onChange', newValue);
 
-        this.value = newValue;
+        this.setState({value: newValue});
 
         if (this.props.onChange) {
             this.props.onChange(newValue);
@@ -67,7 +59,7 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
         // log.info("onBlur");
 
         if (this.props.onBlur) {
-            this.props.onBlur(this.id, this.value);
+            this.props.onBlur(this.id, this.state.value);
         }
 
 
@@ -77,7 +69,7 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
         // log.info("onFocus");
 
         if (this.props.onFocus) {
-            this.props.onFocus(this.id, this.value);
+            this.props.onFocus(this.id, this.state.value);
         }
 
     }
@@ -87,11 +79,16 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
      *
      * https://github.com/summernote/react-summernote/issues/38
      */
-    public onImageUpload(images: any[], insertImage: Function) {
+    public onImageUpload(images: any[], insertImage: (arg: any) => void) {
 
         log.debug('onImageUpload', images);
         /* FileList does not support ordinary array methods */
-        for (let i = 0; i < images.length; i++) {
+
+        for (const image of images) {
+
+            // TODO: this is actually a problem because we CAN NOT store data
+            // URLs without some sort of redirect ...
+
             /* Stores as bas64enc string in the text.
              * Should potentially be stored separately and include just the url
              */
@@ -101,7 +98,8 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
                 insertImage(reader.result);
             };
 
-            reader.readAsDataURL(images[i]);
+            reader.readAsDataURL(image);
+
         }
 
     }
@@ -115,7 +113,8 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
 
         return (
             <ReactSummernote4
-                value={this.props.value || ''}
+                value={this.state.value}
+                defaultValue={this.props.defaultValue}
                 options={{
                     id: this.typedWidgetProps.id,
                     lang: 'en-US',
@@ -126,6 +125,69 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
                     airMode: false,
                     // used to fix issues with tab navigation
                     tabSize: 0,
+                    keyMap: {
+                        pc: {
+                            'ESC': 'escape',
+                            'ENTER': 'insertParagraph',
+                            'CTRL+Z': 'undo',
+                            'CTRL+Y': 'redo',
+                            'TAB': 'tab',
+                            'SHIFT+TAB': 'untab',
+                            'CTRL+B': 'bold',
+                            'CTRL+I': 'italic',
+                            'CTRL+U': 'underline',
+                            'CTRL+SHIFT+S': 'strikethrough',
+                            'CTRL+BACKSLASH': 'removeFormat',
+                            'CTRL+SHIFT+L': 'justifyLeft',
+                            'CTRL+SHIFT+E': 'justifyCenter',
+                            'CTRL+SHIFT+R': 'justifyRight',
+                            'CTRL+SHIFT+J': 'justifyFull',
+                            'CTRL+SHIFT+NUM7': 'insertUnorderedList',
+                            'CTRL+SHIFT+NUM8': 'insertOrderedList',
+                            'CTRL+LEFTBRACKET': 'outdent',
+                            'CTRL+RIGHTBRACKET': 'indent',
+                            'CTRL+NUM0': 'formatPara',
+                            'CTRL+NUM1': 'formatH1',
+                            'CTRL+NUM2': 'formatH2',
+                            'CTRL+NUM3': 'formatH3',
+                            'CTRL+NUM4': 'formatH4',
+                            'CTRL+NUM5': 'formatH5',
+                            'CTRL+NUM6': 'formatH6',
+                            // 'CTRL+ENTER': 'insertHorizontalRule',
+                            'CTRL+K': 'linkDialog.show',
+                        },
+
+                        mac: {
+                            'ESC': 'escape',
+                            'ENTER': 'insertParagraph',
+                            'CMD+Z': 'undo',
+                            'CMD+SHIFT+Z': 'redo',
+                            'TAB': 'tab',
+                            'SHIFT+TAB': 'untab',
+                            'CMD+B': 'bold',
+                            'CMD+I': 'italic',
+                            'CMD+U': 'underline',
+                            'CMD+SHIFT+S': 'strikethrough',
+                            'CMD+BACKSLASH': 'removeFormat',
+                            'CMD+SHIFT+L': 'justifyLeft',
+                            'CMD+SHIFT+E': 'justifyCenter',
+                            'CMD+SHIFT+R': 'justifyRight',
+                            'CMD+SHIFT+J': 'justifyFull',
+                            'CMD+SHIFT+NUM7': 'insertUnorderedList',
+                            'CMD+SHIFT+NUM8': 'insertOrderedList',
+                            'CMD+LEFTBRACKET': 'outdent',
+                            'CMD+RIGHTBRACKET': 'indent',
+                            'CMD+NUM0': 'formatPara',
+                            'CMD+NUM1': 'formatH1',
+                            'CMD+NUM2': 'formatH2',
+                            'CMD+NUM3': 'formatH3',
+                            'CMD+NUM4': 'formatH4',
+                            'CMD+NUM5': 'formatH5',
+                            'CMD+NUM6': 'formatH6',
+                            // 'CMD+ENTER': 'insertHorizontalRule',
+                            'CMD+K': 'linkDialog.show',
+                        },
+                    },
                     // toolbar: [
                     //     ['style', []],
                     //     ['font', []],
@@ -137,9 +199,7 @@ export class RichTextEditor4 extends React.Component<IProps, IState>  {
                     //     ['image', []]
                     // ]
 
-                    // FIXME: somehow images paste has broken now...
-
-                    // FIXME: add blockquote, code, and pre, and cite
+                    // TODO: add blockquote, code, and pre, and cite
 
                     // missing the highlight color pulldown...
 
@@ -177,6 +237,7 @@ interface IProps {
     readonly id: string;
     readonly autofocus?: boolean;
     readonly value?: string;
+    readonly defaultValue?: string;
     readonly onKeyDown?: (event: KeyboardEvent) => void;
     readonly onChange?: (newValue: string) => void;
     readonly onBlur?: (id: string, value: string) => void;
@@ -186,17 +247,5 @@ interface IProps {
 }
 
 interface IState {
-
+    readonly value: string;
 }
-
-interface OnChangeCallback {
-    (newValue: string): void;
-}
-
-/**
- * Used for onFocus and onBlur
- */
-interface OnSelectionCallback {
-    (id: string, value: string): void;
-}
-

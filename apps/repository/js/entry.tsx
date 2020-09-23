@@ -1,16 +1,17 @@
 import * as React from 'react';
-import {RepositoryApp} from '../../../web/js/apps/repository/RepositoryApp';
 import {Logging} from '../../../web/js/logger/Logging';
-import {Logger} from '../../../web/js/logger/Logger';
-
-const log = Logger.create();
+import {Repository} from "../../../web/js/apps/repository/Repository";
 
 async function start() {
 
+    console.log("Starting logging init");
     await Logging.init();
+    console.log("Starting logging init... done");
 
-    await new RepositoryApp().start();
+    await new Repository().start();
 
 }
 
-start().catch(err => log.error("Could not start app: ", err));
+start()
+    .catch(err => console.error("Could not start repository app: ", err));
+

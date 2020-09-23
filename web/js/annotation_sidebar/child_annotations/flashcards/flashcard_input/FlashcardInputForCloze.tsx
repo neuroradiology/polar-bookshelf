@@ -1,19 +1,19 @@
 import * as React from 'react';
-import {Logger} from '../../../../logger/Logger';
-import Button from 'reactstrap/lib/Button';
-import {FlashcardType} from '../../../../metadata/FlashcardType';
+import {FlashcardType} from 'polar-shared/src/metadata/FlashcardType';
 import {FlashcardButtons} from './FlashcardButtons';
 import {FlashcardTypeSelector} from './FlashcardTypeSelector';
 import {RichTextArea} from '../../../RichTextArea';
 import {RichTextMutator} from '../../../../apps/card_creator/elements/schemaform/RichTextMutator';
-import {ClozeFields, FlashcardInputFieldsType} from './FlashcardInputs';
-import {FlashcardInputs} from './FlashcardInputs';
-import {UncontrolledTooltip} from 'reactstrap';
+import {
+    ClozeFields,
+    FlashcardInputFieldsType,
+    FlashcardInputs
+} from './FlashcardInputs';
 import {Ranges} from '../../../../highlights/text/selection/Ranges';
 import {Flashcard} from '../../../../metadata/Flashcard';
 import {FlashcardStyles} from './FlashcardStyles';
-
-const log = Logger.create();
+import Tooltip from "@material-ui/core/Tooltip";
+import IconButton from '@material-ui/core/IconButton';
 
 export class FlashcardInputForCloze extends React.Component<IProps, IState> {
 
@@ -46,10 +46,11 @@ export class FlashcardInputForCloze extends React.Component<IProps, IState> {
 
         return (
 
-            <div id="annotation-flashcard-box" className="mt-1">
+            <div id="annotation-flashcard-box" className="m-1">
 
                 <RichTextArea id={`text-${this.props.id}`}
                               value={fields.text}
+                              defaultValue={this.props.defaultValue}
                               autofocus={true}
                               onKeyDown={event => this.onKeyDown(event)}
                               onRichTextMutator={richTextMutator => this.richTextMutator = richTextMutator}
@@ -69,23 +70,22 @@ export class FlashcardInputForCloze extends React.Component<IProps, IState> {
 
                     <div style={FlashcardStyles.BottomBarItem} className="ml-1">
 
-                        <Button id={`button-${this.props.id}`}
-                                color="light"
-                                size="sm"
-                                onClick={() => this.onClozeDelete()}
-                                className="ml-1 p-1 border">[…]</Button>
+                        <Tooltip title="Create cloze deletion for text">
 
-                        <UncontrolledTooltip placement="bottom"
-                                             delay={{show: 750, hide: 0}}
-                                             target={`button-${this.props.id}`}>
-                            Create cloze deletion for text <span className="text-muted">Control+Shift+C</span>
-                        </UncontrolledTooltip>
+                            <IconButton id={`button-${this.props.id}`}
+                                        onClick={() => this.onClozeDelete()}>
+                                […]
+                            </IconButton>
+                        </Tooltip>
 
                     </div>
 
-
-                    <div style={FlashcardStyles.BottomBarItemRight}
-                         className="text-right">
+                    <div style={{
+                             display: 'flex',
+                             flexGrow: 1,
+                             justifyContent: 'flex-end',
+                             alignItems: 'center'
+                         }}>
 
                         <FlashcardButtons cancelButton={this.props.cancelButton}
                                           existingFlashcard={this.props.existingFlashcard}
@@ -103,7 +103,7 @@ export class FlashcardInputForCloze extends React.Component<IProps, IState> {
 
     private toFields(): ClozeFields {
 
-        const text = FlashcardInputs.fieldToString('text', this.props.existingFlashcard);
+        const text = FlashcardInputs.fieldToString('text', this.props.existingFlashcard, this.props.defaultValue);
 
         return {text};
 
@@ -141,6 +141,10 @@ export class FlashcardInputForCloze extends React.Component<IProps, IState> {
         sel.removeAllRanges();
 
         this.fields.text = this.richTextMutator!.currentValue();
+
+        // TODO this improperly sets the focus by moving the cursor to the
+        // beginning
+        this.richTextMutator!.focus();
 
     }
 
@@ -194,7 +198,7 @@ export class FlashcardInputForCloze extends React.Component<IProps, IState> {
 
 }
 
-export interface IProps {
+interface IProps {
 
     readonly id: string;
 
@@ -206,9 +210,11 @@ export interface IProps {
 
     readonly existingFlashcard?: Flashcard;
 
+    readonly defaultValue?: string;
+
 }
 
-export interface IState {
+interface IState {
     readonly iter: number;
 }
 

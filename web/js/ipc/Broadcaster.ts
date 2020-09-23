@@ -1,6 +1,6 @@
 
 import {BrowserWindow, ipcMain} from 'electron';
-import {Logger} from '../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {Broadcasters} from './Broadcasters';
 import {BrowserWindowReference} from '../ui/dialog_window/BrowserWindowReference';
 
@@ -26,12 +26,12 @@ export class Broadcaster {
         this.channel = inputChannel;
 
         // TODO: require that this is registered via start (not automatically).
-        ipcMain.on(inputChannel, (event: Electron.Event, arg: any) => {
+        ipcMain.on(inputChannel, (event, arg: any) => {
 
             log.info("Forwarding message: " , inputChannel, event);
 
             const senderBrowserWindowReference
-                = new BrowserWindowReference(BrowserWindow.fromWebContents(event.sender).id);
+                = new BrowserWindowReference(BrowserWindow.fromWebContents(event.sender)!.id);
 
             Broadcasters.send(outputChannel, arg, senderBrowserWindowReference);
 

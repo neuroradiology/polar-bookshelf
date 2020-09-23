@@ -1,48 +1,30 @@
 import * as React from 'react';
-import {Logger} from '../../../../web/js/logger/Logger';
-import {Statistics} from '../../../../web/js/metadata/Statistics';
-import {IDocInfo} from '../../../../web/js/metadata/DocInfo';
-import {ResponsivePie} from '@nivo/pie';
+import {DocInfoStatistics} from '../../../../web/js/metadata/DocInfoStatistics';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
 import StatTitle from './StatTitle';
-import Table from 'reactstrap/lib/Table';
+import isEqual from 'react-fast-compare';
 
-const log = Logger.create();
-
-export default class TopTagsTable extends React.Component<IProps, IState> {
-
-    constructor(props: IProps, context: any) {
-        super(props, context);
-
-        this.state = {
-        };
-
-    }
-
-    public render() {
-
-        const topTags = Statistics.computeTopTags(this.props.docInfos, 20);
-
-        return <div id="top-tags-table">
-            <StatTitle>Top Tags</StatTitle>
-            <Table>
-                <tbody>
-                    {topTags.map(topTag =>
-                         <tr key={topTag.key}>
-                             <td className="pt-1 pb-1">{topTag.key}</td>
-                             <td className="pt-1 pb-1">{topTag.value}</td>
-                         </tr>)}
-
-                </tbody>
-            </Table>
-        </div>;
-    }
-
-}
 
 export interface IProps {
     readonly docInfos: ReadonlyArray<IDocInfo>;
 }
 
-export interface IState {
+export const TopTagsTable = React.memo((props: IProps) => {
 
-}
+    const topTags = DocInfoStatistics.computeTopTags(props.docInfos, 20);
+
+    return <div id="top-tags-table">
+        <StatTitle>Top Tags</StatTitle>
+        <table>
+            <tbody>
+                {topTags.map(topTag =>
+                     <tr key={topTag.key}>
+                         <td className="pt-1 pb-1">{topTag.key}</td>
+                         <td className="pt-1 pb-1">{topTag.value}</td>
+                     </tr>)}
+
+            </tbody>
+        </table>
+    </div>;
+
+}, isEqual);

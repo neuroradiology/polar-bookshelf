@@ -1,8 +1,8 @@
 import {app, BrowserWindow} from 'electron';
 import {MainTestResultWriter} from './results/writer/MainTestResultWriter';
-import {Logger} from '../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 import {SpectronBrowserWindowOptions} from './SpectronBrowserWindowOptions';
-import {Preconditions} from '../Preconditions';
+import {Preconditions} from 'polar-shared/src/Preconditions';
 
 const log = Logger.create();
 
@@ -70,9 +70,12 @@ export class SpectronMain2 {
 }
 
 async function defaultWindowFactory(): Promise<BrowserWindow> {
-    const mainWindow = new BrowserWindow(SpectronBrowserWindowOptions.create());
+    const options = SpectronBrowserWindowOptions.create();
+    console.log("Creating window with options: ", options);
+
+    const mainWindow = new BrowserWindow(options);
     // mainWindow.webContents.toggleDevTools();
-    await mainWindow.loadURL('about:blank')
+    await mainWindow.loadURL('about:blank');
 
     return mainWindow;
 }

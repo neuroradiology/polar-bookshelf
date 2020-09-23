@@ -1,17 +1,32 @@
 import {DocMetaFileRef, DocMetaRef} from './DocMetaRef';
-import {BinaryFileData, Datastore, DeleteResult, DocMetaSnapshotEventListener, ErrorListener, FileRef, SnapshotResult} from './Datastore';
-import {WriteFileOpts} from './Datastore';
-import {GetFileOpts} from './Datastore';
-import {DatastoreOverview} from './Datastore';
-import {DatastoreCapabilities} from './Datastore';
-import {DatastoreInitOpts} from './Datastore';
-import {BackendFileRefData} from './Datastore';
-import {DocMeta} from '../metadata/DocMeta';
-import {Backend} from './Backend';
-import {DocFileMeta} from './DocFileMeta';
-import {Optional} from '../util/ts/Optional';
-import {DocInfo} from '../metadata/DocInfo';
+import {
+    BackendFileRefData,
+    BinaryFileData,
+    Datastore,
+    DatastoreCapabilities, DatastoreConsistency,
+    DatastoreInitOpts,
+    DatastoreOverview,
+    DeleteResult,
+    DocMetaSnapshot,
+    DocMetaSnapshotEventListener,
+    DocMetaSnapshotOpts,
+    DocMetaSnapshotResult,
+    ErrorListener,
+    GroupIDStr,
+    SnapshotResult,
+    WriteFileOpts, WriteFileProgressListener, WriteOptsBase
+} from './Datastore';
+import {Backend} from 'polar-shared/src/datastore/Backend';
+import {DocFileMeta} from 'polar-shared/src/datastore/DocFileMeta';
 import {DatastoreMutation} from './DatastoreMutation';
+import {IDocInfo} from "polar-shared/src/metadata/IDocInfo";
+import {IDocMeta} from "polar-shared/src/metadata/IDocMeta";
+import {Visibility} from "polar-shared/src/datastore/Visibility";
+import {FileRef} from "polar-shared/src/datastore/FileRef";
+import {ListenablePersistenceLayer} from "./ListenablePersistenceLayer";
+import {UserTagsDB} from "./UserTagsDB";
+import {DocMetas} from "../metadata/DocMetas";
+import {GetFileOpts} from "polar-shared/src/datastore/IDatastore";
 
 export interface PersistenceLayer {
 
@@ -32,9 +47,11 @@ export interface PersistenceLayer {
      */
     contains(fingerprint: string): Promise<boolean>;
 
-    getDocMeta(fingerprint: string): Promise<DocMeta | undefined>;
+    getDocMeta(fingerprint: string): Promise<IDocMeta | undefined>;
 
-    getDocMetaRefs(): Promise<DocMetaRef[]>;
+    getDocMetaSnapshot(opts: DocMetaSnapshotOpts<IDocMeta>): Promise<DocMetaSnapshotResult>;
+
+    getDocMetaRefs(): Promise<ReadonlyArray<DocMetaRef>>;
 
     /**
      * Get a current snapshot of the internal state of the Datastore by
@@ -49,7 +66,7 @@ export interface PersistenceLayer {
      */
     delete(docMetaFileRef: DocMetaFileRef, datastoreMutation?: DatastoreMutation<boolean>): Promise<DeleteResult>;
 
-    writeDocMeta(docMeta: DocMeta, datastoreMutation?: DatastoreMutation<DocInfo>): Promise<DocInfo>;
+    writeDocMeta(docMeta: IDocMeta, datastoreMutation?: DatastoreMutation<IDocInfo>): Promise<IDocInfo>;
 
     /**
      * Make sure the docs with the given fingerprints are synchronized with
@@ -61,16 +78,18 @@ export interface PersistenceLayer {
      * Return the DocInfo written. The DocInfo may be updated on commit
      * including updating lastUpdated, etc.
      */
-    write(fingerprint: string, docMeta: DocMeta, opts?: WriteOpts): Promise<DocInfo>;
+    write(fingerprint: string, docMeta: IDocMeta, opts?: WriteOpts): Promise<IDocInfo>;
 
     writeFile(backend: Backend,
               ref: FileRef,
               data: BinaryFileData,
               opts?: WriteFileOpts): Promise<DocFileMeta>;
 
-    getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): Promise<Optional<DocFileMeta>>;
+    getFile(backend: Backend, ref: FileRef, opts?: GetFileOpts): DocFileMeta;
 
     containsFile(backend: Backend, ref: FileRef): Promise<boolean>;
+
+    deleteFile(backend: Backend, ref: FileRef): Promise<void>;
 
     addDocMetaSnapshotEventListener(docMetaSnapshotEventListener: DocMetaSnapshotEventListener): void;
 
@@ -80,17 +99,41 @@ export interface PersistenceLayer {
 
     capabilities(): DatastoreCapabilities;
 
+    getUserTagsDB(): Promise<UserTagsDB>;
+
 }
 
-export interface WriteOpts {
+export abstract class AbstractPersistenceLayer {
 
-    readonly datastoreMutation?: DatastoreMutation<DocInfo>;
+    public readonly abstract datastore: Datastore;
 
-    /**
-     * Also write a file (PDF, PHZ) with the DocMeta data so that it's atomic
-     * and that the operations are ordered properly.
-     */
-    readonly writeFile?: BackendFileRefData;
+    public async getDocMetaSnapshot(opts: DocMetaSnapshotOpts<IDocMeta>): Promise<DocMetaSnapshotResult> {
+
+        const onSnapshot = (snapshot: DocMetaSnapshot<string>) => {
+
+            if (snapshot.data) {
+                const docMeta = DocMetas.deserialize(snapshot.data, opts.fingerprint);
+
+                opts.onSnapshot({...snapshot, data: docMeta});
+
+            } else {
+                opts.onSnapshot({...snapshot, data: undefined});
+            }
+
+        };
+
+        return await this.datastore.getDocMetaSnapshot({
+            fingerprint: opts.fingerprint,
+            onSnapshot: snapshot => onSnapshot(snapshot),
+            onError: opts.onError
+        });
+
+    }
+
+}
+
+export interface WriteOpts extends WriteOptsBase<IDocInfo> {
+
 
 }
 
@@ -98,4 +141,5 @@ export type PersistenceLayerID = string;
 
 export type PersistenceLayerProvider = () => PersistenceLayer;
 
+export type ListenablePersistenceLayerProvider = () => ListenablePersistenceLayer;
 

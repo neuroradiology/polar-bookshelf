@@ -1,421 +1,382 @@
-import * as ReactDOM from 'react-dom';
 import * as React from 'react';
-import {FileImportController} from './FileImportController';
-import {IEventDispatcher, SimpleReactor} from '../../reactor/SimpleReactor';
-import {IDocInfo} from '../../metadata/DocInfo';
-import {AppInstance} from '../../electron/framework/AppInstance';
-import {PersistenceLayerManager, PersistenceLayerTypes} from '../../datastore/PersistenceLayerManager';
-import {HashRouter, Route, Switch} from 'react-router-dom';
-import {PrioritizedSplashes} from '../../../../apps/repository/js/splash/PrioritizedSplashes';
-import {SyncBar, SyncBarProgress} from '../../ui/sync_bar/SyncBar';
-import {DocRepoAnkiSyncController} from '../../controller/DocRepoAnkiSyncController';
-import DocRepoApp from '../../../../apps/repository/js/doc_repo/DocRepoApp';
-import AnnotationRepoApp from '../../../../apps/repository/js/annotation_repo/AnnotationRepoApp';
-import {PersistenceLayer} from '../../datastore/PersistenceLayer';
-import {Logger} from '../../logger/Logger';
-import {UpdatesController} from '../../auto_updates/UpdatesController';
-import {PersistenceLayerEvent} from '../../datastore/PersistenceLayerEvent';
+import {IEventDispatcher} from '../../reactor/SimpleReactor';
+import {IDocInfo} from 'polar-shared/src/metadata/IDocInfo';
+import {PersistenceLayerManager} from '../../datastore/PersistenceLayerManager';
+import {BrowserRouter, Route, Switch} from 'react-router-dom';
 import {RepoDocMetaManager} from '../../../../apps/repository/js/RepoDocMetaManager';
-import {CloudService} from '../../../../apps/repository/js/cloud/CloudService';
 import {RepoDocMetaLoader} from '../../../../apps/repository/js/RepoDocMetaLoader';
-import WhatsNewApp from '../../../../apps/repository/js/whats_new/WhatsNewApp';
-import CommunityApp from '../../../../apps/repository/js/community/CommunityApp';
-import StatsApp from '../../../../apps/repository/js/stats/StatsApp';
-import LogsApp from '../../../../apps/repository/js/logs/LogsApp';
-import {ToasterService} from '../../ui/toaster/ToasterService';
-import {ProgressService} from '../../ui/progress_bar/ProgressService';
-import {ProgressTracker} from '../../util/ProgressTracker';
-import {RepoDocMetas} from '../../../../apps/repository/js/RepoDocMetas';
-import EditorsPicksApp from '../../../../apps/repository/js/editors_picks/EditorsPicksApp';
-import {RendererAnalytics} from '../../ga/RendererAnalytics';
-import {Version} from '../../util/Version';
-import {LoadExampleDocs} from './onboarding/LoadExampleDocs';
-import {RepositoryTour} from './RepositoryTour';
-import {LocalPrefs} from '../../util/LocalPrefs';
-import {LifecycleEvents} from '../../ui/util/LifecycleEvents';
-import {Platforms} from '../../util/Platforms';
-import {AppOrigin} from '../AppOrigin';
-import {AppRuntime} from '../../AppRuntime';
-import {AuthHandlers} from './auth_handler/AuthHandler';
-import Input from 'reactstrap/lib/Input';
-import {Premium} from '../../../../apps/repository/js/splash/splashes/premium/Premium';
-import {Splashes} from '../../../../apps/repository/js/splash2/Splashes';
-import {MobileDisclaimer} from './MobileDisclaimer';
-import {MobileDisclaimers} from './MobileDisclaimers';
-import {TabNav} from '../../ui/tabs/TabNav';
-import {NULL_FUNCTION} from '../../util/Functions';
-import {MachineDatastores} from '../../customers/MachineDatastores';
-import {MailingList} from './auth_handler/MailingList';
-const log = Logger.create();
-
-export class RepositoryApp {
-
-    private readonly persistenceLayerManager = new PersistenceLayerManager();
-    private readonly repoDocInfoManager: RepoDocMetaManager;
-    private readonly repoDocInfoLoader: RepoDocMetaLoader;
-
-    constructor() {
-        this.repoDocInfoManager = new RepoDocMetaManager(this.persistenceLayerManager);
-        this.repoDocInfoLoader = new RepoDocMetaLoader(this.persistenceLayerManager);
-    }
-
-    public async start() {
-
-        log.info("Running with Polar version: " + Version.get());
-
-        AppOrigin.configure();
-
-        const authHandler = AuthHandlers.get();
-
-        if (await authHandler.status() === 'needs-authentication') {
-            await authHandler.authenticate();
-            return;
-        }
-
-        // subscribe but do it in the background as this isn't a high priority UI task.
-        MailingList.subscribeWhenNecessary()
-            .catch(err => log.error(err));
-
-        const updatedDocInfoEventDispatcher: IEventDispatcher<IDocInfo> = new SimpleReactor();
-
-        const syncBarProgress: IEventDispatcher<SyncBarProgress> = new SimpleReactor();
-
-        new FileImportController(this.persistenceLayerManager, updatedDocInfoEventDispatcher)
-            .start();
-
-        new DocRepoAnkiSyncController(this.persistenceLayerManager, syncBarProgress)
-            .start();
-
-        new UpdatesController().start();
-
-        new ToasterService().start();
-
-        new ProgressService().start();
-
-        await this.doLoadExampleDocs();
-
-        MachineDatastores.triggerBackgroundUpdates(this.persistenceLayerManager);
-
-        // PreviewDisclaimers.createWhenNecessary();
-
-        MobileDisclaimers.createWhenNecessary();
-
-        updatedDocInfoEventDispatcher.addEventListener(docInfo => {
-            this.onUpdatedDocInfo(docInfo);
-        });
-
-        this.persistenceLayerManager.addEventListener(event => {
-
-            if (event.state === 'changed') {
-                event.persistenceLayer.addEventListener((persistenceLayerEvent: PersistenceLayerEvent) => {
-
-                    this.onUpdatedDocInfo(persistenceLayerEvent.docInfo);
-
-                });
-            }
-
-        });
-
-        const renderDocRepoApp = () => {
-            return ( <DocRepoApp persistenceLayerManager={this.persistenceLayerManager}
-                                 updatedDocInfoEventDispatcher={updatedDocInfoEventDispatcher}
-                                 repoDocMetaManager={this.repoDocInfoManager}
-                                 repoDocMetaLoader={this.repoDocInfoLoader}
-                                 syncBarProgress={syncBarProgress}/> );
-        };
-
-        const renderAnnotationRepoApp = () => {
-            return ( <AnnotationRepoApp persistenceLayerManager={this.persistenceLayerManager}
-                                        updatedDocInfoEventDispatcher={updatedDocInfoEventDispatcher}
-                                        repoDocMetaManager={this.repoDocInfoManager}
-                                        repoDocMetaLoader={this.repoDocInfoLoader}
-                                        syncBarProgress={syncBarProgress}/> );
-        };
-
-        const renderWhatsNew = () => {
-            return ( <WhatsNewApp persistenceLayerManager={this.persistenceLayerManager}/> );
-        };
-
-        const renderCommunity = () => {
-            return ( <CommunityApp persistenceLayerManager={this.persistenceLayerManager}/> );
-        };
-
-        const renderStats = () => {
-            return ( <StatsApp persistenceLayerManager={this.persistenceLayerManager}
-                               repoDocMetaManager={this.repoDocInfoManager}/> );
-        };
-
-        const renderLogs = () => {
-            return ( <LogsApp persistenceLayerManager={this.persistenceLayerManager}/> );
-        };
-
-        const editorsPicks = () => {
-            return ( <EditorsPicksApp persistenceLayerManager={this.persistenceLayerManager}/> );
-        };
-
-        const premium = () => {
-            return (<Premium/>);
-        };
-
-        const onNavChange = () => {
-
-            try {
-
-                const url = new URL(document.location!.href);
-
-                const path = url.pathname + url.hash || "";
-                const hostname = url.hostname;
-                const title = document.title;
-
-                log.info("Navigating to: ", { path, hostname, title });
-
-                RendererAnalytics.pageview(path, hostname, document.title);
-
-            } catch (e) {
-                log.error("Unable to handle hash change", e);
-            }
-
-        };
-
-        // must be called the first time so that we have analytics for the home
-        // page on first load.
-        onNavChange();
-
-        window.addEventListener("hashchange", () => onNavChange(), false);
-
-        this.sendAnalytics();
-
-        ReactDOM.render(
-
-            <div style={{height: '100%'}}>
-
-                {/*<PrioritizedSplashes persistenceLayerManager={this.persistenceLayerManager}/>*/}
-
-                <Splashes persistenceLayerManager={this.persistenceLayerManager}/>
-
-                <SyncBar progress={syncBarProgress}/>
-
-                <RepositoryTour/>
-
-                {/*TODO this doesn't actually work because the iframes aren't */}
-                {/*expanded properly I think. */}
-
-                {/*<TabNav addTabBinder={NULL_FUNCTION}*/}
-                        {/*initialTabs={[*/}
-                            {/*{*/}
-                                {/*title: "Repository",*/}
-                                {/*content: <div>*/}
-
-                                    {/*<HashRouter hashType="noslash">*/}
-
-                                        {/*<Switch>*/}
-                                            {/*<Route exact path='/(logout|overview|login|configured|invite|premium)?' render={renderDocRepoApp}/>*/}
-                                            {/*<Route exact path='/annotations' render={renderAnnotationRepoApp}/>*/}
-                                            {/*<Route exact path='/whats-new' render={renderWhatsNew}/>*/}
-                                            {/*<Route exact path='/community' render={renderCommunity}/>*/}
-                                            {/*<Route exact path='/stats' render={renderStats}/>*/}
-                                            {/*<Route exact path='/logs' render={renderLogs}/>*/}
-                                            {/*<Route exact path='/editors-picks' render={editorsPicks}/>*/}
-                                        {/*</Switch>*/}
-
-                                    {/*</HashRouter>*/}
-
-                                {/*</div>*/}
-                            {/*},*/}
-                            {/*{*/}
-                                {/*title: "How to be Successful",*/}
-                                {/*content: "http://localhost:8500/htmlviewer/index.html?file=http%3A%2F%2Flocalhost%3A8500%2Ffiles%2F12ftXRsX74J16Rmjwp85zhRswMstYCksLppdqCvnEeTz2Ut98ut&filename=12tTwL82eW-How_To_Be_Successful___Sam_Altman.phz&fingerprint=1TofZfqvEEcSgrNYi6Wo&zoom=page-width&strategy=portable"*/}
-                            {/*}*/}
-                        {/*]}/>*/}
-
-                <HashRouter hashType="noslash">
-
-                    <Switch>
-                        <Route exact path='/(logout|overview|login|configured|invite|premium)?' render={renderDocRepoApp}/>
-                        <Route exact path='/annotations' render={renderAnnotationRepoApp}/>
-                        <Route exact path='/whats-new' render={renderWhatsNew}/>
-                        <Route exact path='/community' render={renderCommunity}/>
-                        <Route exact path='/stats' render={renderStats}/>
-                        <Route exact path='/logs' render={renderLogs}/>
-                        <Route exact path='/editors-picks' render={editorsPicks}/>
-                    </Switch>
-
-                </HashRouter>
-
-                <HashRouter hashType="noslash">
-
-                    <Switch>
-                        <Route exact path='/premium' render={premium}/>
-                    </Switch>
-
-                </HashRouter>
-
-
-                {/*Used for file uploads.  This has to be on the page and can't be*/}
-                {/*selectively hidden by components.*/}
-                <Input type="file"
-                       id="file-upload"
-                       name="file-upload"
-                       accept=".pdf, .PDF"
-                       multiple
-                       onChange={() => this.onFileUpload()}
-                       style={{display: 'none'}}/>
-
-            </div>,
-
-            document.getElementById('root') as HTMLElement
-
-        );
-
-        this.handleRepoDocInfoEvents();
-
-        await this.repoDocInfoLoader.start();
-
-        new CloudService(this.persistenceLayerManager)
-            .start();
-
-        await this.persistenceLayerManager.start();
-
-        log.info("Started repo doc loader.");
-
-        AppInstance.notifyStarted('RepositoryApp');
-
-    }
-
-    private onFileUpload() {
-
-        window.postMessage({type: 'file-uploaded'}, '*');
-
-    }
-
-    private handleRepoDocInfoEvents() {
-
-        this.repoDocInfoLoader.addEventListener(event => {
-
-            for (const mutation of event.mutations) {
-
-                if (mutation.mutationType === 'created' || mutation.mutationType === 'updated') {
-                    this.repoDocInfoManager.updateFromRepoDocMeta(mutation.fingerprint, mutation.repoDocMeta!);
-                } else {
-                    this.repoDocInfoManager.updateFromRepoDocMeta(mutation.fingerprint);
-                }
-
-            }
-
-        });
-
-    }
-
-    private sendAnalytics() {
-
-        const version = Version.get();
-        const platform = Platforms.toSymbol(Platforms.get());
-        const screen = `${window.screen.width}x${window.screen.height}`;
-        const runtime = AppRuntime.type();
-
-        RendererAnalytics.event({category: 'app', action: 'version-' + version});
-        RendererAnalytics.event({category: 'platform', action: `${platform}`});
-        RendererAnalytics.event({category: 'screen', action: screen});
-        RendererAnalytics.event({category: 'runtime', action: runtime});
-
-    }
-
-    private async doLoadExampleDocs() {
-
-        const doLoad = async () => {
-
-            // TODO: also use system prefs for this too.
-
-            await LocalPrefs.markOnceExecuted(LifecycleEvents.HAS_EXAMPLE_DOCS, async () => {
-
-                // load the eample docs in the store.. on the first load we
-                // should propably make sure this doesn't happen more than once
-                // as the user could just delete all the files in their repo.
-                // await new
-                const loadExampleDocs = new LoadExampleDocs(this.persistenceLayerManager.get());
-                await loadExampleDocs.load(docInfo => {
-                    this.onUpdatedDocInfo(docInfo);
-                });
-
-            }, async () => {
-                log.debug("Docs already exist in repo");
-            });
-
-        };
-
-        this.persistenceLayerManager.addEventListener(event => {
-
-            if (event.state === 'initialized') {
-
-                doLoad()
-                    .catch(err => log.error("Unable to load example docs: ", err));
-
-            }
-
-        });
-
-    }
-
-    /**
-     * Handle DocInfo updates sent from viewers.
-     */
-    private onUpdatedDocInfo(docInfo: IDocInfo): void {
-
-        const handleUpdatedDocInfo = async () => {
-
-            log.info("Received DocInfo update");
-
-            const docMeta = await this.persistenceLayerManager.get().getDocMeta(docInfo.fingerprint);
-
-            const repoDocMeta = RepoDocMetas.convert(docInfo.fingerprint, docMeta);
-
-            const validity = RepoDocMetas.isValid(repoDocMeta);
-
-            if (validity === 'valid') {
-
-                this.repoDocInfoManager.updateFromRepoDocMeta(docInfo.fingerprint, repoDocMeta);
-
-                const progress = new ProgressTracker(1, 'doc-info-update').terminate();
-
-                this.repoDocInfoLoader.dispatchEvent({
-                     mutations: [
-                         {
-                             mutationType: 'created',
-                             fingerprint: docInfo.fingerprint,
-                             repoDocMeta
-                         }
-                     ],
-                     progress
-                 });
-
-                // TODO: technically I don't think we need to test if we're
-                // using the cloud layer anymore as synchronizeDocs is a noop
-                // in all other datastores.
-                const persistenceLayer: PersistenceLayer = this.persistenceLayerManager.get();
-
-                if (PersistenceLayerTypes.get() === 'cloud') {
-
-                    const handleWriteDocMeta = async () => {
-                        await persistenceLayer.synchronizeDocs({fingerprint: docInfo.fingerprint, docMeta});
-                    };
-
-                    handleWriteDocMeta()
-                        .catch(err => log.error("Unable to write docMeta to datastore: ", err));
-
-                }
-
-            } else {
-
-                log.warn(`We were given an invalid DocInfo which yielded a broken RepoDocMeta ${validity}: `,
-                         docInfo, repoDocMeta);
-
-            }
-
-        };
-
-        handleUpdatedDocInfo()
-            .catch(err => log.error("Unable to update doc info with fingerprint: " + docInfo.fingerprint, err));
-
-    }
-
+import WhatsNewScreen
+    from '../../../../apps/repository/js/whats_new/WhatsNewScreen';
+import {StatsScreen} from '../../../../apps/repository/js/stats/StatsScreen';
+import {PremiumScreen} from '../../../../apps/repository/js/premium/PremiumScreen';
+import {SupportScreen} from '../../../../apps/repository/js/support/SupportScreen';
+import {AuthRequired} from "../../../../apps/repository/js/AuthRequired";
+import {
+    PersistenceLayerApp,
+    PersistenceLayerContext
+} from "../../../../apps/repository/js/persistence_layer/PersistenceLayerApp";
+import {InviteScreen} from "../../../../apps/repository/js/invite/InviteScreen";
+import {AccountControlSidebar} from "../../../../apps/repository/js/AccountControlSidebar";
+import {ReactRouters} from "../../react/router/ReactRouters";
+import {Cached} from '../../react/Cached';
+import {SettingsScreen} from "../../../../apps/repository/js/configure/settings/SettingsScreen";
+import {DeviceScreen} from "../../../../apps/repository/js/device/DeviceScreen";
+import {App} from "./AppInitializer";
+import {Callback} from "polar-shared/src/util/Functions";
+import {MUIRepositoryRoot} from "../../mui/MUIRepositoryRoot";
+import {DocRepoScreen2} from "../../../../apps/repository/js/doc_repo/DocRepoScreen2";
+import {DocRepoStore2} from "../../../../apps/repository/js/doc_repo/DocRepoStore2";
+import {DocRepoSidebarTagStore} from "../../../../apps/repository/js/doc_repo/DocRepoSidebarTagStore";
+import {AnnotationRepoSidebarTagStore} from "../../../../apps/repository/js/annotation_repo/AnnotationRepoSidebarTagStore";
+import {AnnotationRepoStore2} from "../../../../apps/repository/js/annotation_repo/AnnotationRepoStore";
+import {AnnotationRepoScreen2} from "../../../../apps/repository/js/annotation_repo/AnnotationRepoScreen2";
+import {ReviewRouter} from "../../../../apps/repository/js/reviewer/ReviewerRouter";
+import {PersistentRoute} from "./PersistentRoute";
+import {LogoutDialog} from "../../../../apps/repository/js/LogoutDialog";
+import {LoginScreen} from "../../../../apps/repository/js/login/LoginScreen";
+import {UserTagsProvider} from "../../../../apps/repository/js/persistence_layer/UserTagsProvider2";
+import {DocMetaContextProvider} from "../../annotation_sidebar/DocMetaContextProvider";
+import {DocViewerDocMetaLookupContextProvider} from "../../../../apps/doc/src/DocViewerDocMetaLookupContextProvider";
+import {DocViewerStore} from "../../../../apps/doc/src/DocViewerStore";
+import {DocFindStore} from "../../../../apps/doc/src/DocFindStore";
+import {AnnotationSidebarStoreProvider} from "../../../../apps/doc/src/AnnotationSidebarStore";
+import {DocViewer} from "../../../../apps/doc/src/DocViewer";
+import {Preconditions} from "polar-shared/src/Preconditions";
+import {RepositoryRoot} from "./RepositoryRoot";
+import {AddFileDropzoneScreen} from './upload/AddFileDropzoneScreen';
+import {AnkiSyncController} from "../../controller/AnkiSyncController";
+import {ErrorScreen} from "../../../../apps/repository/js/ErrorScreen";
+import {ListenablePersistenceLayerProvider} from "../../datastore/PersistenceLayer";
+import {RepoHeader3} from "../../../../apps/repository/js/repo_header/RepoHeader3";
+import {RepoFooter} from "../../../../apps/repository/js/repo_footer/RepoFooter";
+import {MUIDialogController} from "../../mui/dialogs/MUIDialogController";
+import {UseLocationChangeStoreProvider} from '../../../../apps/doc/src/annotations/UseLocationChangeStore';
+import {UseLocationChangeRoot} from "../../../../apps/doc/src/annotations/UseLocationChangeRoot";
+import {deepMemo} from "../../react/ReactUtils";
+import { PHZMigrationScreen } from './migrations/PHZMigrationScreen';
+import { AddFileDropzoneRoot } from './upload/AddFileDropzoneRoot';
+
+interface IProps {
+    readonly app: App;
+    readonly repoDocMetaManager: RepoDocMetaManager;
+    readonly repoDocMetaLoader: RepoDocMetaLoader;
+    readonly persistenceLayerManager: PersistenceLayerManager;
+    readonly updatedDocInfoEventDispatcher: IEventDispatcher<IDocInfo>;
+    readonly onFileUpload: Callback;
 }
+
+interface RepositoryDocViewerScreenProps {
+    readonly persistenceLayerProvider: ListenablePersistenceLayerProvider;
+}
+
+export const RepositoryDocViewerScreen = deepMemo((props: RepositoryDocViewerScreenProps) => {
+
+    return (
+        <AuthRequired>
+            <PersistenceLayerContext.Provider
+                value={{persistenceLayerProvider: props.persistenceLayerProvider}}>
+                <UserTagsProvider>
+                    <DocMetaContextProvider>
+                        <DocViewerDocMetaLookupContextProvider>
+                            <DocViewerStore>
+                                <DocFindStore>
+                                    <AnnotationSidebarStoreProvider>
+                                        <DocViewer/>
+                                    </AnnotationSidebarStoreProvider>
+                                </DocFindStore>
+                            </DocViewerStore>
+                        </DocViewerDocMetaLookupContextProvider>
+                    </DocMetaContextProvider>
+                </UserTagsProvider>
+            </PersistenceLayerContext.Provider>
+        </AuthRequired>
+    );
+});
+
+export const RepositoryApp = (props: IProps) => {
+
+    const {app, repoDocMetaManager, repoDocMetaLoader, persistenceLayerManager} = props;
+
+    Preconditions.assertPresent(app, 'app');
+
+    const RenderDocViewerScreen = React.memo(() => (
+        <RepositoryDocViewerScreen persistenceLayerProvider={app.persistenceLayerProvider}/>
+    ));
+
+    const RenderDocRepoScreen = React.memo(() => (
+            <AuthRequired>
+                <PersistenceLayerApp tagsType="documents"
+                                     repoDocMetaManager={repoDocMetaManager}
+                                     repoDocMetaLoader={repoDocMetaLoader}
+                                     persistenceLayerManager={persistenceLayerManager}
+                                     render={(docRepo) =>
+                                         <DocRepoStore2>
+                                             <DocRepoSidebarTagStore>
+                                                 <AddFileDropzoneRoot>
+                                                     <>
+                                                         <AnkiSyncController/>
+                                                         <DocRepoScreen2/>
+                                                     </>
+                                                 </AddFileDropzoneRoot>
+                                             </DocRepoSidebarTagStore>
+                                         </DocRepoStore2>
+                                     }/>
+            </AuthRequired>
+        ));
+
+    const RenderAnnotationRepoScreen = React.memo(() => {
+        return (
+            <AuthRequired>
+                <PersistenceLayerApp tagsType="annotations"
+                                     repoDocMetaManager={repoDocMetaManager}
+                                     repoDocMetaLoader={repoDocMetaLoader}
+                                     persistenceLayerManager={persistenceLayerManager}
+                                     render={(props) =>
+                                         <AnnotationRepoStore2>
+                                             <AnnotationRepoSidebarTagStore>
+                                                 <AddFileDropzoneRoot>
+                                                     <>
+                                                         <ReviewRouter/>
+                                                         <AnnotationRepoScreen2/>
+                                                     </>
+                                                 </AddFileDropzoneRoot>
+                                             </AnnotationRepoSidebarTagStore>
+                                         </AnnotationRepoStore2>
+                                     }/>
+            </AuthRequired>
+        );
+    });
+
+    const RenderSettingsScreen = () => (
+        <Cached>
+            <PersistenceLayerContext.Provider value={{persistenceLayerProvider: app.persistenceLayerProvider}}>
+                <SettingsScreen/>
+            </PersistenceLayerContext.Provider>
+        </Cached>
+    );
+
+    // const renderProfileScreen = () => (
+    //     <Cached>
+    //         <ProfileScreen
+    //             persistenceLayerProvider={app.persistenceLayerProvider}
+    //             persistenceLayerController={app.persistenceLayerController}/>
+    //     </Cached>
+    // );
+
+    const renderDeviceScreen = () => (
+        <Cached>
+            <DeviceScreen/>
+        </Cached>
+    );
+
+    const RenderDefaultScreen = React.memo(() => (
+        <RenderDocRepoScreen/>
+    ));
+
+    const renderWhatsNewScreen = () => (
+        <WhatsNewScreen/>
+    );
+
+    // const renderCommunityScreen = () => (
+    //     <AuthRequired authStatus={authStatus}>
+    //         <CommunityScreen persistenceLayerProvider={persistenceLayerProvider}
+    //                          persistenceLayerController={persistenceLayerController}/>
+    //     </AuthRequired>
+    // );
+
+    const renderStatsScreen = () => (
+        <AuthRequired>
+            <PersistenceLayerApp tagsType="documents"
+                                 repoDocMetaManager={repoDocMetaManager}
+                                 repoDocMetaLoader={repoDocMetaLoader}
+                                 persistenceLayerManager={persistenceLayerManager}
+                                 render={(docRepo) =>
+                                     <StatsScreen/>
+                                 }/>
+        </AuthRequired>
+    );
+
+    // const renderLogsScreen = () => {
+    //     return (
+    //         <AuthRequired authStatus={app.authStatus}>
+    //             <LogsScreen
+    //                 persistenceLayerProvider={app.persistenceLayerProvider}
+    //                 persistenceLayerController={app.persistenceLayerController}/>
+    //         </AuthRequired>
+    //     );
+    // };
+
+    // const editorsPicksScreen = () => {
+    //     return (
+    //         <AuthRequired authStatus={authStatus}>
+    //             <EditorsPicksScreen persistenceLayerProvider={persistenceLayerProvider}
+    //                                 persistenceLayerController={persistenceLayerController}/>
+    //         </AuthRequired>
+    //         );
+    // };
+    //
+    // const renderCreateGroupScreen = () => {
+    //
+    //     return (
+    //         <AuthRequired authStatus={app.authStatus}>
+    //             <CreateGroupScreen
+    //                 persistenceLayerProvider={app.persistenceLayerProvider}
+    //                 persistenceLayerController={app.persistenceLayerController}
+    //                 repoDocMetaManager={repoDocMetaManager}/>
+    //         </AuthRequired>
+    //     );
+    // };
+
+    const premiumScreen = () => {
+        return (
+            <PremiumScreen/>
+        );
+    };
+
+    const premiumScreenYear = () => {
+        return (
+            <PremiumScreen/>
+        );
+    };
+
+    const supportScreen = () => {
+        return (<SupportScreen/>);
+    };
+
+    // const renderGroupScreen = () => {
+    //     return (
+    //         <GroupScreen persistenceLayerProvider={app.persistenceLayerProvider}
+    //                      persistenceLayerController={app.persistenceLayerController}/>);
+    // };
+
+    // const renderGroupsScreen = () => {
+    //     return (<GroupsScreen
+    //                 persistenceLayerProvider={app.persistenceLayerProvider}
+    //                 persistenceLayerController={app.persistenceLayerController}/>);
+    // };
+    //
+    // const renderGroupHighlightsScreen = () => {
+    //     return (<HighlightsScreen
+    //                 persistenceLayerProvider={app.persistenceLayerProvider}
+    //                 persistenceLayerController={app.persistenceLayerController}/>);
+    // };
+
+    // const renderGroupHighlightScreen = () => {
+    //     return (<GroupHighlightScreen
+    //                 persistenceLayerProvider={app.persistenceLayerProvider}
+    //                 persistenceLayerController={app.persistenceLayerController}/>);
+    // };
+
+    const renderInvite = () => {
+        return <InviteScreen/>;
+    };
+
+
+    return (
+        <MUIRepositoryRoot>
+            <RepositoryRoot>
+                <div className="RepositoryApp"
+                     style={{
+                         display: 'flex',
+                         minHeight: 0,
+                         flexDirection: 'column',
+                         flexGrow: 1
+                     }}>
+
+                    <>
+                        <UseLocationChangeStoreProvider>
+                            <BrowserRouter>
+                                <UseLocationChangeRoot>
+                                    <MUIDialogController>
+
+                                        <Switch>
+
+                                            <Route exact path={["/login", "/login.html"]}>
+                                                <LoginScreen/>
+                                            </Route>
+
+                                            <Route exact path={["/doc", "/doc/:id"]}>
+                                                <RenderDocViewerScreen/>
+                                            </Route>
+
+                                            <Route exact path="/error">
+                                                <ErrorScreen/>
+                                            </Route>
+
+                                            <Route exact path="/migration/phz">
+                                                <PHZMigrationScreen/>
+                                            </Route>
+
+                                            <Route>
+                                                <RepoHeader3/>
+
+                                                <PersistentRoute exact path="/">
+                                                    <RenderDefaultScreen/>
+                                                </PersistentRoute>
+
+                                                <PersistentRoute exact path="/annotations">
+                                                    <RenderAnnotationRepoScreen/>
+                                                </PersistentRoute>
+
+                                                <Switch location={ReactRouters.createLocationWithPathOnly()}>
+
+                                                    <Route exact path='/whats-new'
+                                                           render={renderWhatsNewScreen}/>
+
+                                                    <Route exact path='/invite' render={renderInvite}/>
+
+                                                    <Route exact path='/plans' render={premiumScreen}/>
+
+                                                    <Route exact path='/plans-year'
+                                                           render={premiumScreenYear}/>
+
+                                                    <Route exact path='/premium' render={premiumScreen}/>
+
+                                                    <Route exact path='/support' render={supportScreen}/>
+
+                                                    <Route exact path='/stats'
+                                                           component={renderStatsScreen}/>
+
+                                                    <Route exact path="/settings"
+                                                           component={RenderSettingsScreen}/>
+
+                                                    <Route exact path="/device"
+                                                           component={renderDeviceScreen}/>
+
+                                                </Switch>
+                                                <RepoFooter/>
+                                            </Route>
+
+                                        </Switch>
+
+                                        <Switch location={ReactRouters.createLocationWithHashOnly()}>
+
+                                            <Route path='#account'
+                                                   component={() =>
+                                                       <Cached>
+                                                           <AccountControlSidebar persistenceLayerController={app.persistenceLayerController}/>
+                                                       </Cached>
+                                                   }/>
+
+                                            <Route path='#add'>
+                                                <AuthRequired>
+                                                    <PersistenceLayerContext.Provider value={{persistenceLayerProvider: app.persistenceLayerProvider}}>
+                                                        <AddFileDropzoneScreen/>
+                                                    </PersistenceLayerContext.Provider>
+                                                </AuthRequired>
+                                            </Route>
+
+                                        </Switch>
+                                    </MUIDialogController>
+                                </UseLocationChangeRoot>
+                         </BrowserRouter>
+                        </UseLocationChangeStoreProvider>
+                    </>
+
+                </div>
+            </RepositoryRoot>
+        </MUIRepositoryRoot>
+    );
+
+};
+

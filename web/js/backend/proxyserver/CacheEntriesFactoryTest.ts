@@ -1,14 +1,15 @@
 import fs from 'fs';
 import os from 'os';
 import {assert} from 'chai';
-import {TestingTime} from '../../test/TestingTime';
+import {TestingTime} from 'polar-shared/src/test/TestingTime';
 import {CacheEntriesFactory} from './CacheEntriesFactory';
 import {assertJSON} from '../../test/Assertions';
-import {MockCapturedContent} from '../../capture/MockCapturedContent';
-import {CapturedPHZWriter} from '../../capture/CapturedPHZWriter';
-import {Dictionaries} from '../../util/Dictionaries';
-import {FilePaths} from '../../util/FilePaths';
-import {Files} from '../../util/Files';
+import {MockCapturedContent} from 'polar-content-capture/src/phz/MockCapturedContent';
+import {CapturedPHZWriter} from 'polar-content-capture/src/phz/CapturedPHZWriter';
+import {Dictionaries} from 'polar-shared/src/util/Dictionaries';
+import {FilePaths} from 'polar-shared/src/util/FilePaths';
+import {Files} from 'polar-shared/src/util/Files';
+import {PHZWriter} from "polar-content-capture/src/phz/PHZWriter";
 
 const tmpdir = os.tmpdir();
 TestingTime.freeze();
@@ -116,7 +117,9 @@ describe('CacheEntriesFactory', function() {
             const captured = MockCapturedContent.create();
 
             const path = FilePaths.tmpfile("cached-entries-factory.phz");
-            const capturedPHZWriter = new CapturedPHZWriter(path);
+
+            const output = new PHZWriter(path);
+            const capturedPHZWriter = new CapturedPHZWriter(output);
             await capturedPHZWriter.convert(captured);
 
             assert.ok(await Files.existsAsync(path));

@@ -1,6 +1,6 @@
-import fetch, {RequestInit} from '../../../../util/Fetch';
+import {Fetches, RequestInit} from 'polar-shared/src/util/Fetch';
 import {AnkiConnectResponse} from './AnkiConnectResponse';
-import {Logger} from '../../../../logger/Logger';
+import {Logger} from 'polar-shared/src/logger/Logger';
 
 const log = Logger.create();
 
@@ -17,36 +17,46 @@ export class AnkiConnectFetch {
 
         // try to determine which port to use based on polar connect vs anki connect
 
-        for (const port of this.PORTS) {
+        const detectPort = async (): Promise<number> => {
 
-            try {
+            for (const port of this.PORTS) {
 
-                const body = {
-                    action: "version",
-                    version: 6,
-                    params: {}
-                };
+                try {
 
-                const init = { method: 'POST', body: JSON.stringify(body) };
+                    const body = {
+                        action: "version",
+                        version: 6,
+                        params: {}
+                    };
 
-                await AnkiConnectFetch.fetch(init, port);
+                    const init = { method: 'POST', body: JSON.stringify(body) };
 
-                log.notice("Using Anki sync port: "  + port);
+                    await AnkiConnectFetch.fetch(init, port);
 
-                this.port = port;
+                    return port;
 
-                return port;
+                } catch (e) {
+                    console.debug("Unable to connect on port: " + port);
+                }
 
-            } catch (e) {
-                log.debug("Unable to connect on port: " + port);
             }
 
-        }
+            const msg = `Unable to connect to anki with ports ${this.PORTS} (make sure Polar Connect is installed)`;
+            log.error(msg);
+            throw new Error(msg);
 
-        log.error(`Unable to connect to anki with ports ${this.PORTS} (make sure Polar Connect is installed)`);
+        };
+
+        const configurePort = async () => {
+
+            this.port = await detectPort();
+            log.notice("Using Anki sync port: "  + this.port);
+
+        };
+
+        await configurePort();
 
     }
-
 
     // TODO: since the response is wrapped in a closure, we can handle errors
     // properly here.
@@ -54,14 +64,16 @@ export class AnkiConnectFetch {
 
         try {
 
-            init = Object.assign({}, init);
-            init.cache = 'no-cache';
-            init.headers = {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
+            init = {
+                ...init,
+                cache: 'no-cache',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
             };
 
-            const response = await fetch('http://127.0.0.1:' + port, init);
+            const response = await Fetches.fetch('http://127.0.0.1:' + port, init);
             const result: AnkiConnectResponse = await response.json();
 
             if (result.error) {
